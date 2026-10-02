@@ -32,7 +32,7 @@ export interface ReviewAlgorithm {
 export interface CorrectionStyle {
   readonly id: string
   /** Instruction handed to the model for how to correct this learner. */
-  instruction(): string
+  instruction(ctx: { targetLanguage: string; nativeLanguage: string }): string
 }
 
 /** Records what was studied. */
