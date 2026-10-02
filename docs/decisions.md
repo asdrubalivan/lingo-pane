@@ -51,6 +51,16 @@ Plugging in:
 - The mod runs outside the sandbox and sees every prompt and tool call: the README must state what it reads, what it stores and where it sends data.
 - The mod API is early access and may change: pin a minimum Claude Code version.
 
+## Requirement: lessons generated from the learner's history
+
+Added by the author on 2026-10-02 ("important"): the mod must have a mode that **generates new lessons based on what the learner has already done**.
+
+- Input: the activity log and per-card progress (what was studied, what was failed, which lessons and topics were covered), plus the configured languages and level.
+- Output: new cards or a new lesson, written back through the content store so it behaves like any other lesson (and is reviewed by the review algorithm).
+- Likely shape: a fifth strategy, **lesson generator**, next to the four existing ones, with a model-backed implementation using `$.model` (the learner's own subscription; see "Who teaches") and room for others (rule-based, an external generator).
+- This makes recording history a core feature, not an extra: the activity log and `$.store` progress must be rich enough to drive generation.
+- Risk to design for: a model can produce wrong grammar or vocabulary. Generated material has to be marked as generated, stay inside the learner's level and known vocabulary, and the tutor should say when it is not sure.
+
 ## Waiting-state trigger (learned from the Doom mod)
 
 Study of `jarrodwatts/intermission` (a mod that shows a multiplayer Doom pane while Claude is busy), 2026-10-02. What we reuse; we do **not** reuse its native engine, shared memory, images or downloaded binary.
@@ -64,6 +74,7 @@ Build order: the trigger (this section) first, then strategies plug into it.
 
 ## Still open
 
+- Lesson generator: confirm it is a fifth strategy, and how generated lessons are persisted and validated.
 - Exact shape of the four strategy interfaces.
 - Audio: system voice only, or bundled assets.
 - Data model of a lesson/exercise and of progress in `$.store`.
