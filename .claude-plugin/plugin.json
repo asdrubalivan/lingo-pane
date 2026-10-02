@@ -1,0 +1,19 @@
+{
+  "name": "lingo-pane",
+  "version": "0.1.0",
+  "description": "Learn a language live in your terminal: a lesson pane, micro-lessons while Claude works, swappable strategies.",
+  "userConfig": {
+    "targetLanguage": {
+      "type": "string",
+      "title": "Target language",
+      "description": "The language you are learning (for example: English, Ukrainian, French).",
+      "default": "English"
+    },
+    "nativeLanguage": {
+      "type": "string",
+      "title": "Native language",
+      "description": "The language explanations are written in.",
+      "default": "Spanish"
+    }
+  }
+}
