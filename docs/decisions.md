@@ -98,6 +98,19 @@ Implemented (2026-10-02, branch `feat/wait-trigger`):
 - Width fallback: opt-in through the `openPaneWhileWaiting` option (off by default, since a pane opened by a timer contradicts "the lesson pane opens from `/lingo`"). When on and the pane is not placed, an `AbovePrompt` button (hotkey `1`) opens it; a press is an asked open, placed at any width.
 - Not verified in a real session: how the Spinner and the band actually look, and the order of `tool.check` / `tool.call` around a permission dialog (the resume after an ask relies on the next `tool.call`).
 
+## First lesson
+
+Implemented (2026-10-02, branch `feat/first-lesson`):
+
+- **Content:** the 30 `en-a1` cards (6 lessons of 5) are a module, `src/content/demo-english-a1.ts`. The JSON was deleted: the mod cannot import JSON and tests cannot read files, so no check against it was possible.
+- **Pane:** with setup done, `/lingo` (now always opened with the keyboard) shows "Lesson N of 6: x to recall, y new" and a Start button. A session is a frozen queue in `$.state` (`practice`): the Pimsleur recall block (n-1, n-3, n-7) then the lesson's new cards, one at a time. Answers are matched after lowercasing and dropping punctuation and extra spaces; a miss gives a deterministic hint (first letter, words, letters) and lets the learner retry; "Show answer" (a) counts as a miss; Next (n); at the end "Lesson N done" and `currentLesson` advances once, up to "demo finished" after lesson 6.
+- **Progress:** one `$.store` key, `progress`: `{ version: 1, currentLesson, cards: { [cardId]: { reviews: [{ at, isCorrect }] } } }` (last 20 attempts per card), validated on read (`parseProgress`), re-read before every write. Every attempt is recorded.
+- **Tutor hint:** "Hint from tutor" (h) calls `$.model.complete` (`haiku`, `effort: 'low'`, 200 tokens, 20 s timeout) with the socratic instruction as `system`; the reference answer goes to the model marked "never write it", and a reply that contains the answer is dropped. No answer shows a short message.
+- **Verified in a real session (tmux):** start, a miss with hint, Show answer, Next, a correct answer with punctuation, focus moving to the next card's field, and one real tutor reply. Not seen: the "Lesson N done" screen and the demo-finished screen (covered by tests only). Hotkeys do not work while the answer field has the focus: Tab to a button first (after Next the field is focused again).
+- **Tests:** the kit has no `mock.model`; the tests answer `model.complete` beneath the plugin instead. `ui.focus` could not be answered the same way, so the focus move is untested in the kit (the call tolerates a rejection).
+
+What comes next: the lesson generator (fifth strategy) writing new cards from this `progress`, so the pack is no longer fixed at 6 lessons.
+
 ## Still open
 
 - Lesson generator: how generated lessons are persisted and validated.
