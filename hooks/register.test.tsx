@@ -28,7 +28,7 @@ test('once set up, the lesson pane greets with the saved languages and level', a
       },
     })
     expect(await ui.find({ type: 'Text', text: /Learning English from Spanish, level B1/ })).toBeDefined()
-    expect(await ui.find({ key: 'native' })).toBeUndefined()
+    expect(await ui.find({ key: 'native-0' })).toBeUndefined()
     await ui.unmount()
   }
 })

@@ -99,10 +99,10 @@ test(`the setup pane walks the wizard on ${surface} and saves the choices in the
     expect(await pane.find({ type: 'Text', text: /Learning/ })).toBeUndefined()
 
     // (a) languages, prefilled from userConfig (Spanish / English).
-    expect((await pane.find({ key: 'native' }))?.text).toBe('Spanish')
-    expect((await pane.find({ key: 'target' }))?.text).toBe('English')
-    await pane.input({ key: 'target', text: 'Ukrainian' })
-    expect((await pane.find({ key: 'target' }))?.text).toBe('Ukrainian')
+    expect((await pane.find({ key: 'native-0' }))?.text).toBe('Spanish')
+    expect((await pane.find({ key: 'target-0' }))?.text).toBe('English')
+    await pane.input({ key: 'target-0', text: 'Ukrainian' })
+    expect((await pane.find({ key: 'target-1' }))?.text).toBe('Ukrainian')
     await pane.press({ key: 'next' })
 
     // (b) level: no Next until a button is pressed.
@@ -159,12 +159,12 @@ test('back goes one step and keeps what was typed', async ($, on) => {
     viewport: { columns: 100, rows: 30 },
     props: PANE_PROPS,
   })
-  await pane.input({ key: 'native', text: 'Portuguese', kind: 'change' })
+  await pane.input({ key: 'native-0', text: 'Portuguese', kind: 'change' })
   await pane.press({ key: 'next' })
   await pane.press({ key: 'back' })
-  expect((await pane.find({ key: 'native' }))?.text).toBe('Portuguese')
+  expect((await pane.find({ key: 'native-0' }))?.text).toBe('Portuguese')
   // The same language twice cannot go on.
-  await pane.input({ key: 'target', text: 'portuguese', kind: 'change' })
+  await pane.input({ key: 'target-0', text: 'portuguese', kind: 'change' })
   expect(await pane.find({ key: 'next' })).toBeUndefined()
   expect(await pane.find({ type: 'Text', text: /must differ/ })).toBeDefined()
   await pane.unmount()
@@ -373,7 +373,7 @@ test('/lingo subcommands: unknown lists the real ones, setup opens the wizard, a
     requestId: 'lingo',
     props: PANE_PROPS,
   })
-  expect((await pane.find({ key: 'target' }))?.text).toBe('English')
+  expect((await pane.find({ key: 'target-0' }))?.text).toBe('English')
   await pane.press({ key: 'next' })
   await pane.press({ key: 'next' })
   await pane.unmount()

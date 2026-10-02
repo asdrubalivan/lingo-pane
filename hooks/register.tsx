@@ -53,6 +53,8 @@ export const register: Register = (on, options) => {
   // with the timers themselves (the engine cancels pending waits on reload).
   let delayTimer: { cancel: () => void } | null = null
   let closeTimer: { cancel: () => void } | null = null
+  // Bumped on Enter in a wizard field so the field is drawn again with its text.
+  let inputRev = 0
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -256,7 +258,7 @@ export const register: Register = (on, options) => {
             <Text dimColor>lingo-pane: setup pending. </Text>
             <Button
               key="setup-start"
-              label="Start setup"
+              label="Start setup (2)"
               hotkey="2"
               variant="primary"
               onPress={async () => {
@@ -268,7 +270,7 @@ export const register: Register = (on, options) => {
             <Text> </Text>
             <Button
               key="setup-later"
-              label="Later"
+              label="Later (3)"
               hotkey="3"
               onPress={() => update($, setupBand, () => ({ isHidden: true }))}
             />
@@ -350,26 +352,41 @@ export const register: Register = (on, options) => {
         <Text dimColor>
           Step {number} of {STEPS.length}
         </Text>
+        <Text dimColor>
+          {step === 'languages'
+            ? 'Type, Enter keeps the text, Tab moves to the next field or button.'
+            : 'Tab moves between buttons and Enter presses, or press the key shown.'}
+        </Text>
 
         {step === 'languages' && (
           <Box flexDirection="column">
             <Text>Which languages? The explanations are in your native language.</Text>
             <Input
-              key="native"
+              key={`native-${inputRev}`}
               label="Native language: "
               value={draft.nativeLanguage}
               placeholder="e.g. Spanish"
               autoFocus
               onInput={value => dispatch({ type: 'set-field', field: 'nativeLanguage', value })}
-              onSubmit={value => dispatch({ type: 'set-field', field: 'nativeLanguage', value })}
+              onSubmit={value => {
+                dispatch({ type: 'set-field', field: 'nativeLanguage', value: value === '' ? draft.nativeLanguage : value })
+                // Enter empties the field on screen; a new key redraws it with the draft.
+                inputRev += 1
+                $.ui.invalidate('ui.render')
+              }}
             />
             <Input
-              key="target"
+              key={`target-${inputRev}`}
               label="Target language: "
               value={draft.targetLanguage}
               placeholder="e.g. English"
               onInput={value => dispatch({ type: 'set-field', field: 'targetLanguage', value })}
-              onSubmit={value => dispatch({ type: 'set-field', field: 'targetLanguage', value })}
+              onSubmit={value => {
+                dispatch({ type: 'set-field', field: 'targetLanguage', value: value === '' ? draft.targetLanguage : value })
+                // Enter empties the field on screen; a new key redraws it with the draft.
+                inputRev += 1
+                $.ui.invalidate('ui.render')
+              }}
             />
           </Box>
         )}
@@ -378,11 +395,13 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column">
             <Text>Your level in {draft.targetLanguage.trim()} (CEFR):</Text>
             <Box>
-              {LEVELS.map(level => (
+              {LEVELS.map((level, index) => (
                 <Box key={`box-${level}`} marginRight={1}>
                   <Button
                     key={`level-${level}`}
                     label={level}
+                    hotkey={String(index + 1)}
+                    plain
                     variant={draft.level === level ? 'primary' : 'secondary'}
                     onPress={() => dispatch({ type: 'set-level', level })}
                   />
@@ -397,7 +416,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column">
             <Text>Placement test (optional)</Text>
             <Text dimColor>placement test: coming later</Text>
-            <Button key="skip" label="Skip" variant="primary" onPress={() => dispatch({ type: 'skip' })} />
+            <Button key="skip" label="Skip" hotkey="s" plain onPress={() => dispatch({ type: 'skip' })} />
           </Box>
         )}
 
@@ -441,23 +460,23 @@ export const register: Register = (on, options) => {
                 {info.title}: {info.options.find(o => o.id === draft.strategies[info.axis])?.label ?? draft.strategies[info.axis]}
               </Text>
             ))}
-            <Button key="confirm" label="Confirm" variant="primary" onPress={confirm} />
+            <Button key="confirm" label="Confirm" hotkey="c" plain onPress={confirm} />
           </Box>
         )}
 
         <Box marginTop={1}>
           {step !== 'languages' && (
             <Box marginRight={1}>
-              <Button key="back" label="Back" onPress={() => dispatch({ type: 'back' })} />
+              <Button key="back" label="Back" hotkey="b" plain onPress={() => dispatch({ type: 'back' })} />
             </Box>
           )}
           {(step === 'languages' || step === 'level' || step === 'strategies') && problem === null && (
             <Box marginRight={1}>
-              <Button key="next" label="Next" variant="primary" onPress={() => dispatch({ type: 'next' })} />
+              <Button key="next" label="Next" hotkey="n" plain onPress={() => dispatch({ type: 'next' })} />
             </Box>
           )}
           {step === 'strategies' && (
-            <Button key="skip" label="Skip" onPress={() => dispatch({ type: 'skip' })} />
+            <Button key="skip" label="Skip" hotkey="s" plain onPress={() => dispatch({ type: 'skip' })} />
           )}
         </Box>
         {problem !== null && <Text dimColor>{problem}</Text>}
