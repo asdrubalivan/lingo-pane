@@ -67,6 +67,7 @@ Decided 2026-10-02: the mod has a guided setup.
 
 - **Covers:** native language, target language and level; choosing the strategy for each axis (defaults: socratic correction, Pimsleur review, local JSON store and log); where the learner's material and activity log live (creating the initial structure if missing). An **optional** placement test with the tutor calibrates the level and seeds the history that feeds generated lessons.
 - **When:** opens automatically the first time `/lingo` runs with no configuration, and again on demand with `/lingo setup`.
+- **It must announce itself.** Added 2026-10-02 ("if setup is needed it has to tell you"): while setup is pending, the mod does not wait for the learner to discover `/lingo`. On `session.start` it shows a toast, and a one-line band above the prompt (with a button and hotkey, and a "later" that hides it for the session) stays until setup is done. Other features (spinner micro-lessons) stay quiet until then, because without languages and level there is nothing to teach. Proposed, to confirm when it is built.
 - **Where:** a stepped wizard in the `/lingo` pane with Inputs and Buttons. Only the optional placement test uses the model.
 
 ## Waiting-state trigger (learned from the Doom mod)
