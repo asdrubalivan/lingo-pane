@@ -1,9 +1,20 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+// A finished setup: the mod stays quiet until there is one (see setup.test.tsx).
+const savedSetup = (targetLanguage = 'English') => ({
+  version: 1,
+  targetLanguage,
+  nativeLanguage: 'Spanish',
+  level: 'A1',
+  strategies: { contentStore: 'local', reviewAlgorithm: 'pimsleur', correctionStyle: 'socratic', activityLog: 'local' },
+  completedAt: '2026-10-02T10:00:00.000Z',
+})
+
 const SPINNER = { word: 'Sauteing', message: null, suffix: '…', mode: 'requesting' } as const
 
 test('the spinner carries one micro-lesson after the delay, then drops it', async ($, on) => {
   const clock = mock.clock(on)
+  mock.store(on, { setup: savedSetup() })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   // Stands for the engine beneath the plugin: draws the Spinner line from the
@@ -50,6 +61,7 @@ test('the spinner carries one micro-lesson after the delay, then drops it', asyn
 
 test('a pending permission ask retires the lesson until a tool runs again', async ($, on) => {
   const clock = mock.clock(on)
+  mock.store(on, { setup: savedSetup() })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('tool.check', () => ({ decision: 'ask' }))
   on('tool.call', () => ({ ref: 0, result: {}, text: '' }))
@@ -88,9 +100,9 @@ test('a pending permission ask retires the lesson until a tool runs again', asyn
 
 test(
   'a target language without built-in cards says so instead of inventing one',
-  { options: { targetLanguage: 'Ukrainian', nativeLanguage: 'Spanish' } },
   async ($, on) => {
   const clock = mock.clock(on)
+  mock.store(on, { setup: savedSetup('Ukrainian') })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('ui.render', { component: 'Spinner' }, async (_$, e) => {
     const { Text } = _$.ui.resolve(e)
@@ -125,6 +137,7 @@ test(
   { options: { openPaneWhileWaiting: true } },
   async ($, on) => {
     const clock = mock.clock(on)
+    mock.store(on, { setup: savedSetup() })
     const opens: boolean[] = []
     on('turn.start', (_$, e) => ({ turnId: e.turnId }))
     on('ui.panes', () => ({ value: [] }))
