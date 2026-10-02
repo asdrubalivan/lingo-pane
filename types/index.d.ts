@@ -43,19 +43,42 @@ export type LingoStrategyChoices = {
   activityLog: string
 }
 
-/** What the guided setup saves in `$.store` under the key `setup` (JSON). */
+/** The color themes of the lesson pane. */
+export type LingoThemeName = 'atardecer' | 'tropico' | 'pastel'
+
+/** The model the tutor's own calls use (an alias `$.model.complete` takes). */
+export type LingoTutorModel = 'sonnet' | 'haiku' | 'opus'
+
+/**
+ * What the guided setup saves in `$.store` under the key `setup` (JSON).
+ * Still version 1: a setup saved before `interests`, `splitShare`, `tutorModel`
+ * and `theme` existed reads back with their defaults.
+ */
 export type LingoSetup = {
   version: 1
   targetLanguage: string
   nativeLanguage: string
   level: LingoLevel
   strategies: LingoStrategyChoices
+  /** What the learner likes to talk about (role-play scenarios come from it); may be empty. */
+  interests: string[]
+  /** Share of the terminal's width the docked split asks for, in percent (33-50). */
+  splitShare: number
+  tutorModel: LingoTutorModel
+  theme: LingoThemeName
   /** ISO timestamp of the confirmation. */
   completedAt: string
 }
 
 /** The wizard's steps, in order. */
-export type LingoSetupStep = 'languages' | 'level' | 'placement' | 'strategies' | 'summary'
+export type LingoSetupStep =
+  | 'languages'
+  | 'level'
+  | 'interests'
+  | 'placement'
+  | 'strategies'
+  | 'preferences'
+  | 'summary'
 
 /** What the learner has chosen so far, before confirming. */
 export type LingoSetupDraft = {
@@ -64,6 +87,11 @@ export type LingoSetupDraft = {
   /** Null until a level button is pressed. */
   level: LingoLevel | null
   strategies: LingoStrategyChoices
+  /** As typed: comma-separated, split when the setup is saved. */
+  interests: string
+  splitShare: number
+  tutorModel: LingoTutorModel
+  theme: LingoThemeName
 }
 
 /** The wizard in the `/lingo` pane. `draft` null means "still the defaults". */

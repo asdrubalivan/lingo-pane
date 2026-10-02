@@ -113,6 +113,12 @@ test(`the setup pane walks the wizard on ${surface} and saves the choices in the
     await pane.press({ key: 'level-B1' })
     await pane.press({ key: 'next' })
 
+    // Interests: an optional field, kept on Enter like the languages.
+    expect((await pane.find({ key: 'interests-1' }))?.text).toBe('')
+    await pane.input({ key: 'interests-1', text: 'chess, cooking, chess' })
+    expect((await pane.find({ key: 'interests-2' }))?.text).toBe('chess, cooking, chess')
+    await pane.press({ key: 'next' })
+
     // Optional placement test: only a Skip, and the "coming later" note.
     expect(await pane.find({ type: 'Text', text: 'placement test: coming later' })).toBeDefined()
     expect(await pane.find({ key: 'next' })).toBeUndefined()
@@ -124,8 +130,23 @@ test(`the setup pane walks the wizard on ${surface} and saves the choices in the
     expect(await pane.find({ type: 'Text', text: /Direct \(coming later\)/ })).toBeDefined()
     await pane.press({ key: 'next' })
 
-    // (d) summary, then confirm.
+    // (d) preferences: split share, tutor model, theme; Sonnet and Atardecer by default.
+    for (const key of ['share-33', 'share-40', 'share-45', 'share-50', 'tutor-sonnet', 'tutor-haiku', 'tutor-opus', 'theme-atardecer', 'theme-tropico', 'theme-pastel']) {
+      expect(await pane.find({ key })).toBeDefined()
+    }
+    const previewColor = async () => (await pane.find({ type: 'Text', text: /^conversation$/ }))?.props.color
+    expect(await previewColor()).toBe('#ff8a65')
+    await pane.press({ key: 'share-50' })
+    await pane.press({ key: 'tutor-haiku' })
+    await pane.press({ key: 'theme-tropico' })
+    // The preview follows the theme picked.
+    expect(await previewColor()).toBe('#ffb347')
+    await pane.press({ key: 'next' })
+
+    // (e) summary, then confirm.
     expect(await pane.find({ type: 'Text', text: /Ukrainian from Spanish, level B1/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: 'Interests: chess, cooking' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /Split 50 % · tutor Haiku.* · theme Trópico/ })).toBeDefined()
     expect(entries.get('setup')).toBeUndefined()
     await pane.press({ key: 'confirm' })
 
@@ -135,6 +156,10 @@ test(`the setup pane walks the wizard on ${surface} and saves the choices in the
       nativeLanguage: 'Spanish',
       level: 'B1',
       strategies: SAVED.strategies,
+      interests: ['chess', 'cooking'],
+      splitShare: 50,
+      tutorModel: 'haiku',
+      theme: 'tropico',
       completedAt: '2026-10-02T12:00:00.000Z',
     })
     expect(toasts.at(-1)).toMatch(/setup saved/)
@@ -257,7 +282,9 @@ test('while setup is pending the spinner shows no micro-lesson, after it the les
   await pane.press({ key: 'next' })
   await pane.press({ key: 'level-A1' })
   await pane.press({ key: 'next' })
+  await pane.press({ key: 'next' })
   await pane.press({ key: 'skip' })
+  await pane.press({ key: 'next' })
   await pane.press({ key: 'next' })
   await pane.press({ key: 'confirm' })
   await pane.unmount()
@@ -385,4 +412,22 @@ test('a pending setup makes plain /lingo ask for the keyboard so the wizard can 
   on('ui.panes', () => ({ value: [] }))
   await $.command.run({ command: 'lingo', args: '' })
   expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true }])
+})
+
+test('/lingo theme switches the saved theme in the store; bad names and a pending setup are answered', async ($, on) => {
+  const entries = memoryStore(on)
+  engineBeneath(on)
+
+  expect((await $.command.run({ command: 'lingo', args: 'theme pastel' })).text).toMatch(/finish the setup first/)
+  expect(entries.get('setup')).toBeUndefined()
+
+  entries.set('setup', SAVED)
+  const set = await $.command.run({ command: 'lingo', args: 'theme Trópico' })
+  expect(set.text).toBe('lingo-pane: theme set to Trópico.')
+  // The rest of the setup is kept; the defaults of a setup saved before themes are filled in.
+  expect(entries.get('setup')).toMatchObject({ ...SAVED, theme: 'tropico', splitShare: 40, tutorModel: 'sonnet' })
+
+  expect((await $.command.run({ command: 'lingo', args: 'theme neon' })).text).toMatch(/no theme "neon"/)
+  expect((await $.command.run({ command: 'lingo', args: 'theme' })).text).toMatch(/name a theme/)
+  expect(entries.get('setup')).toMatchObject({ theme: 'tropico' })
 })

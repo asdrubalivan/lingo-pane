@@ -161,6 +161,10 @@ Settled in a grilling session based on the UI research (`forge-laboral:docs/rese
 4. `switch ▸`, role-play (fixed list + generated), reading.
 5. Contextual opt-in.
 
+Implemented (2026-10-02, branch `feat/lesson-ui`), one note per step:
+
+- **Step 0, setup.** Two new wizard steps: `interests` after the level (an `Input`, optional, comma-separated, at most 5 of 40 characters, repeats dropped) and `preferences` after the strategies (split share 33, 40, 45 or 50 %, default 40; tutor model Sonnet, Haiku or Opus, default Sonnet; theme Atardecer, Trópico or Pastel with a colored preview line). The summary lists them. The saved setup **stays `version: 1`**: the new fields read back with their defaults when missing or unreadable, so a setup saved before this branch is still done and the build on `main` (which ignores extra fields) still reads one saved here. `/lingo theme <name>` (accents and case ignored) re-reads the store, changes only the theme and answers `{ text }`; a missing name or an unknown one lists the themes, and a pending setup says to finish it first. Choices made here: "No letter hotkeys anywhere" also covers the wizard, so Back, Next, Skip and Confirm are reached with Tab (Confirm starts with the ring); the level keeps its digits because that step has no field. Labels live in `src/labels.ts`; catalogue entries (strategies, tutor models, themes) keep their labels next to their ids. The mockup gives `review` no color, so each theme's `review` borrows the learner's color. Not verified in a real session: how the preferences step and the preview colors look, and whether the wizard is comfortable without letter hotkeys.
+
 ## Still open
 
 - Lesson generator: how generated lessons are persisted and validated.

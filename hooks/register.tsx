@@ -19,20 +19,26 @@ import {
   tutorPrompt,
 } from '../src/lesson'
 import { socratic } from '../src/correction/socratic'
-import { parseLingoArgs, unknownSubcommandText } from '../src/command'
+import { badThemeText, parseLingoArgs, unknownSubcommandText } from '../src/command'
+import { LABELS } from '../src/labels'
+import { THEMES, themeByName } from '../src/themes'
 import { microLesson, spinnerSuffix } from '../src/microcards'
 import {
   CLOSED_WIZARD,
   LEVELS,
   SETUP_STORE_KEY,
+  SPLIT_SHARES,
   STEPS,
   STRATEGY_AXES,
+  TUTOR_MODELS,
   buildSetup,
   draftFromConfig,
   draftFromSetup,
+  parseInterests,
   parseSetup,
   resolveSetup,
   stepProblem,
+  withTheme,
   wizardTransition,
 } from '../src/setup'
 import type { WizardEvent } from '../src/setup'
@@ -66,7 +72,6 @@ const practice = atom({ plugin: 'lingo-pane', key: 'practice' } as const, IDLE_P
 
 const TUTOR_TIMEOUT_MS = 20000
 
-const PENDING_TOAST = 'lingo-pane: setup pending. Run /lingo setup (or press 2 in the band above the prompt).'
 
 export const register: Register = (on, options) => {
   const target = String(options.targetLanguage)
@@ -83,13 +88,13 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'lingo',
-      description: 'Open the lesson pane; "/lingo setup" runs the guided setup',
+      description: 'Open the lesson pane; "/lingo setup" runs the guided setup; "/lingo theme <name>" switches colors',
     })
 
     // Load what is saved into the mirror; a missing or unreadable value is pending.
     const setup = parseSetup(await $.store.get(SETUP_STORE_KEY))
     await update($, setupCache, () => ({ isLoaded: true, setup }))
-    if (setup === null) $.ui.toast(PENDING_TOAST)
+    if (setup === null) $.ui.toast(LABELS.setupPendingToast)
 
     return next(e)
   })
@@ -102,7 +107,7 @@ export const register: Register = (on, options) => {
 
     const setup = parseSetup(await $.store.get(SETUP_STORE_KEY))
     await update($, setupCache, () => ({ isLoaded: true, setup }))
-    if (setup === null) $.ui.toast(PENDING_TOAST)
+    if (setup === null) $.ui.toast(LABELS.setupPendingToast)
 
     return next(e)
   })
@@ -110,9 +115,20 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'lingo' }, async ($, e) => {
     const parsed = parseLingoArgs(e.args)
     if (parsed.kind === 'unknown') return { text: unknownSubcommandText(parsed.name) }
+    if (parsed.kind === 'bad-theme') return { text: badThemeText(parsed.name) }
 
     const cache = await read($, setupCache)
     const setup = resolveSetup(cache, await $.store.get(SETUP_STORE_KEY))
+
+    if (parsed.kind === 'theme') {
+      // Re-read the store before writing: another session may have saved since.
+      const latest = parseSetup(await $.store.get(SETUP_STORE_KEY))
+      if (latest === null) return { text: LABELS.themeNeedsSetup }
+      const changed = withTheme(latest, parsed.theme)
+      await $.store.set(SETUP_STORE_KEY, changed)
+      await update($, setupCache, () => ({ isLoaded: true, setup: changed }))
+      return { text: LABELS.themeSet(themeByName(parsed.theme).label) }
+    }
 
     if (parsed.kind === 'setup') {
       // Always the wizard, never a toggle: re-running it resumes where it was.
@@ -524,6 +540,11 @@ export const register: Register = (on, options) => {
     const problem = stepProblem(step, draft)
     const dispatch = (event: WizardEvent) =>
       update($, setupWizard, s => wizardTransition(s, event, defaults))
+    // Enter empties a field on screen; a new key redraws it with the draft.
+    const keepText = () => {
+      inputRev += 1
+      $.ui.invalidate('ui.render')
+    }
 
     const confirm = async () => {
       const latest = await read($, setupWizard)
@@ -532,49 +553,65 @@ export const register: Register = (on, options) => {
       await $.store.set(SETUP_STORE_KEY, built)
       await update($, setupCache, () => ({ isLoaded: true, setup: built }))
       await update($, setupWizard, () => CLOSED_WIZARD)
-      $.ui.toast('lingo-pane: setup saved')
+      $.ui.toast(LABELS.setupSaved)
     }
+
+    // One row of choice buttons; the picked one is primary. No hotkeys: Tab and Enter.
+    const choices = <T extends string | number>(
+      prefix: string,
+      options: readonly { id: T; label: string }[],
+      picked: T,
+      pick: (id: T) => unknown,
+    ) => (
+      <Box flexWrap="wrap" columnGap={1}>
+        {options.map(option => (
+          <Button
+            key={`${prefix}-${option.id}`}
+            label={option.label}
+            variant={picked === option.id ? 'primary' : 'secondary'}
+            onPress={() => pick(option.id)}
+          />
+        ))}
+      </Box>
+    )
+    const preview = themeByName(draft.theme).colors
 
     return (
       <Box flexDirection="column">
-        <Text bold>lingo-pane setup</Text>
+        <Text bold>{LABELS.setupTitle}</Text>
+        <Text dimColor>{LABELS.setupStep(number, STEPS.length)}</Text>
         <Text dimColor>
-          Step {number} of {STEPS.length}
-        </Text>
-        <Text dimColor>
-          {step === 'languages'
-            ? 'Type, Enter keeps the text, Tab moves to the next field or button.'
-            : 'Tab moves between buttons and Enter presses, or press the key shown.'}
+          {step === 'languages' || step === 'interests'
+            ? LABELS.setupHintTyping
+            : step === 'level'
+              ? LABELS.setupHintLevel
+              : LABELS.setupHintButtons}
         </Text>
 
         {step === 'languages' && (
           <Box flexDirection="column">
-            <Text>Which languages? The explanations are in your native language.</Text>
+            <Text>{LABELS.setupLanguagesAsk}</Text>
             <Input
               key={`native-${inputRev}`}
-              label="Native language: "
+              label={LABELS.setupNative}
               value={draft.nativeLanguage}
-              placeholder="e.g. Spanish"
+              placeholder={LABELS.setupNativePlaceholder}
               autoFocus
               onInput={value => dispatch({ type: 'set-field', field: 'nativeLanguage', value })}
               onSubmit={value => {
                 dispatch({ type: 'set-field', field: 'nativeLanguage', value: value === '' ? draft.nativeLanguage : value })
-                // Enter empties the field on screen; a new key redraws it with the draft.
-                inputRev += 1
-                $.ui.invalidate('ui.render')
+                keepText()
               }}
             />
             <Input
               key={`target-${inputRev}`}
-              label="Target language: "
+              label={LABELS.setupTarget}
               value={draft.targetLanguage}
-              placeholder="e.g. English"
+              placeholder={LABELS.setupTargetPlaceholder}
               onInput={value => dispatch({ type: 'set-field', field: 'targetLanguage', value })}
               onSubmit={value => {
                 dispatch({ type: 'set-field', field: 'targetLanguage', value: value === '' ? draft.targetLanguage : value })
-                // Enter empties the field on screen; a new key redraws it with the draft.
-                inputRev += 1
-                $.ui.invalidate('ui.render')
+                keepText()
               }}
             />
           </Box>
@@ -582,54 +619,68 @@ export const register: Register = (on, options) => {
 
         {step === 'level' && (
           <Box flexDirection="column">
-            <Text>Your level in {draft.targetLanguage.trim()} (CEFR):</Text>
-            <Box>
+            <Text>{LABELS.setupLevelAsk(draft.targetLanguage.trim())}</Text>
+            <Box flexWrap="wrap" columnGap={1}>
               {LEVELS.map((level, index) => (
-                <Box key={`box-${level}`} marginRight={1}>
-                  <Button
-                    key={`level-${level}`}
-                    label={level}
-                    hotkey={String(index + 1)}
-                    plain
-                    variant={draft.level === level ? 'primary' : 'secondary'}
-                    onPress={() => dispatch({ type: 'set-level', level })}
-                  />
-                </Box>
+                <Button
+                  key={`level-${level}`}
+                  label={level}
+                  hotkey={String(index + 1)}
+                  plain
+                  variant={draft.level === level ? 'primary' : 'secondary'}
+                  onPress={() => dispatch({ type: 'set-level', level })}
+                />
               ))}
             </Box>
-            <Text dimColor>{draft.level === null ? 'None picked yet.' : `Picked: ${draft.level}`}</Text>
+            <Text dimColor>{draft.level === null ? LABELS.setupLevelNone : LABELS.setupLevelPicked(draft.level)}</Text>
+          </Box>
+        )}
+
+        {step === 'interests' && (
+          <Box flexDirection="column">
+            <Text>{LABELS.setupInterestsAsk}</Text>
+            <Text dimColor>{LABELS.setupInterestsNote}</Text>
+            <Input
+              key={`interests-${inputRev}`}
+              label={LABELS.setupInterests}
+              value={draft.interests}
+              placeholder={LABELS.setupInterestsPlaceholder}
+              autoFocus
+              onInput={value => dispatch({ type: 'set-interests', value })}
+              onSubmit={value => {
+                dispatch({ type: 'set-interests', value: value === '' ? draft.interests : value })
+                keepText()
+              }}
+            />
           </Box>
         )}
 
         {step === 'placement' && (
           <Box flexDirection="column">
-            <Text>Placement test (optional)</Text>
-            <Text dimColor>placement test: coming later</Text>
-            <Button key="skip" label="Skip" hotkey="s" plain onPress={() => dispatch({ type: 'skip' })} />
+            <Text>{LABELS.setupPlacementTitle}</Text>
+            <Text dimColor>{LABELS.setupPlacementLater}</Text>
           </Box>
         )}
 
         {step === 'strategies' && (
           <Box flexDirection="column">
-            <Text>How should it work? Defaults are fine; "coming later" ones are not built yet.</Text>
+            <Text>{LABELS.setupStrategiesAsk}</Text>
             {STRATEGY_AXES.map(info => (
               <Box key={`axis-${info.axis}`} flexDirection="column">
                 <Text bold>{info.title}</Text>
-                <Box flexWrap="wrap">
+                <Box flexWrap="wrap" columnGap={1}>
                   {info.options.map(option =>
                     option.isImplemented ? (
-                      <Box key={`box-${info.axis}-${option.id}`} marginRight={1}>
-                        <Button
-                          key={`${info.axis}-${option.id}`}
-                          label={option.label}
-                          variant={draft.strategies[info.axis] === option.id ? 'primary' : 'secondary'}
-                          onPress={() => dispatch({ type: 'set-strategy', axis: info.axis, id: option.id })}
-                        />
-                      </Box>
+                      <Button
+                        key={`${info.axis}-${option.id}`}
+                        label={option.label}
+                        variant={draft.strategies[info.axis] === option.id ? 'primary' : 'secondary'}
+                        onPress={() => dispatch({ type: 'set-strategy', axis: info.axis, id: option.id })}
+                      />
                     ) : (
-                      <Box key={`box-${info.axis}-${option.id}`} marginRight={1}>
-                        <Text dimColor>{option.label} (coming later)</Text>
-                      </Box>
+                      <Text key={`soon-${info.axis}-${option.id}`} dimColor>
+                        {LABELS.setupComingLater(option.label)}
+                      </Text>
                     ),
                   )}
                 </Box>
@@ -638,35 +689,59 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
+        {step === 'preferences' && (
+          <Box flexDirection="column">
+            <Text>{LABELS.setupPreferencesAsk}</Text>
+            <Text bold>{LABELS.setupShareTitle}</Text>
+            {choices('share', SPLIT_SHARES.map(share => ({ id: share, label: LABELS.setupShare(share) })), draft.splitShare, share =>
+              dispatch({ type: 'set-share', share }),
+            )}
+            <Text bold>{LABELS.setupTutorTitle}</Text>
+            {choices('tutor', TUTOR_MODELS, draft.tutorModel, model => dispatch({ type: 'set-tutor', model }))}
+            <Text dimColor>{LABELS.setupTutorNote}</Text>
+            <Text bold>{LABELS.setupThemeTitle}</Text>
+            {choices('theme', THEMES.map(t => ({ id: t.name, label: t.label })), draft.theme, theme =>
+              dispatch({ type: 'set-theme', theme }),
+            )}
+            <Box key="theme-preview" columnGap={1} flexWrap="wrap">
+              <Text color={preview.conversation}>conversation</Text>
+              <Text color={preview.roleplay}>role-play</Text>
+              <Text color={preview.reading}>reading</Text>
+              <Text color={preview.tutor}>tutor</Text>
+              <Text color={preview.you}>you</Text>
+            </Box>
+          </Box>
+        )}
+
         {step === 'summary' && (
           <Box flexDirection="column">
-            <Text>Summary</Text>
-            <Text>
-              {draft.targetLanguage.trim()} from {draft.nativeLanguage.trim()}, level {draft.level ?? '?'}
+            <Text>{LABELS.setupSummary}</Text>
+            <Text>{LABELS.setupSummaryLanguages(draft.targetLanguage.trim(), draft.nativeLanguage.trim(), draft.level ?? '?')}</Text>
+            <Text dimColor>{LABELS.setupSummaryInterests(parseInterests(draft.interests))}</Text>
+            <Text dimColor>
+              {LABELS.setupSummaryLook(
+                draft.splitShare,
+                TUTOR_MODELS.find(m => m.id === draft.tutorModel)?.label ?? draft.tutorModel,
+                themeByName(draft.theme).label,
+              )}
             </Text>
             {STRATEGY_AXES.map(info => (
               <Text key={`summary-${info.axis}`} dimColor>
                 {info.title}: {info.options.find(o => o.id === draft.strategies[info.axis])?.label ?? draft.strategies[info.axis]}
               </Text>
             ))}
-            <Button key="confirm" label="Confirm" hotkey="c" plain onPress={confirm} />
           </Box>
         )}
 
-        <Box marginTop={1}>
-          {step !== 'languages' && (
-            <Box marginRight={1}>
-              <Button key="back" label="Back" hotkey="b" plain onPress={() => dispatch({ type: 'back' })} />
-            </Box>
+        <Box marginTop={1} columnGap={1} flexWrap="wrap">
+          {step !== 'languages' && <Button key="back" label={LABELS.back} plain onPress={() => dispatch({ type: 'back' })} />}
+          {step !== 'placement' && step !== 'summary' && problem === null && (
+            <Button key="next" label={LABELS.next} plain onPress={() => dispatch({ type: 'next' })} />
           )}
-          {(step === 'languages' || step === 'level' || step === 'strategies') && problem === null && (
-            <Box marginRight={1}>
-              <Button key="next" label="Next" hotkey="n" plain onPress={() => dispatch({ type: 'next' })} />
-            </Box>
+          {(step === 'placement' || step === 'strategies') && (
+            <Button key="skip" label={LABELS.skip} plain onPress={() => dispatch({ type: 'skip' })} />
           )}
-          {step === 'strategies' && (
-            <Button key="skip" label="Skip" hotkey="s" plain onPress={() => dispatch({ type: 'skip' })} />
-          )}
+          {step === 'summary' && <Button key="confirm" label={LABELS.confirm} variant="primary" autoFocus onPress={confirm} />}
         </Box>
         {problem !== null && <Text dimColor>{problem}</Text>}
       </Box>
