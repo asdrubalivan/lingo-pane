@@ -44,7 +44,7 @@ Plugging in:
 ## Platform constraints that shape the design
 
 - Only the terminal and the Desktop Code tab draw UI; VS Code, `claude -p` and cloud sessions run hooks without showing anything.
-- Must work inside the **herdr** terminal multiplexer (not verified yet; test panes and images there).
+- Must work inside the **herdr** terminal multiplexer. Checked 2026-10-02 by the author with the skeleton: `/lingo` opens the pane as an inline box above the prompt (with a close button) in a narrow terminal that appears to be inside herdr. Images are still untested there.
 - A pane opened by the mod itself needs ≥ 144 columns; a pane opened by something the user did (a command or a button) is placed at any width. So the lesson pane opens from `/lingo`, not from a timer.
 - `$.audio.speak` uses the system voice (macOS `say`); no microphone or speech recognition in the API.
 - Progress persists in `$.store` (4 MiB, shared between sessions, not atomic: one key per item, re-read before writing). UI state lives in `$.state`, which resets on `/clear`, `/resume` and `/branch`.
