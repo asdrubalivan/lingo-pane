@@ -70,6 +70,15 @@ Decided 2026-10-02: the mod has a guided setup.
 - **It must announce itself.** Added 2026-10-02 ("if setup is needed it has to tell you"): while setup is pending, the mod does not wait for the learner to discover `/lingo`. On `session.start` it shows a toast, and a one-line band above the prompt (with a button and hotkey, and a "later" that hides it for the session) stays until setup is done. Other features (spinner micro-lessons) stay quiet until then, because without languages and level there is nothing to teach. Proposed, to confirm when it is built.
 - **Where:** a stepped wizard in the `/lingo` pane with Inputs and Buttons. Only the optional placement test uses the model.
 
+Implemented (2026-10-02, branch `feat/setup`):
+
+- **Subcommands:** `/lingo` parses `args` (`src/command.ts`, pure). No args opens the pane, and a second `/lingo` closes it if it is up and drawn; `setup` always opens the wizard (never toggles); any other word answers `{ text }` listing the subcommands that exist.
+- **Where the choices live:** one `$.store` key, `setup`: `{ version: 1, targetLanguage, nativeLanguage, level, strategies: { contentStore, reviewAlgorithm, correctionStyle, activityLog }, completedAt }`. "Pending" means the key is missing or does not parse (`parseSetup` in `src/setup.ts`: wrong version, unknown or not-yet-built strategy id, bad level, corrupt JSON). `userConfig` is only the default the wizard starts from (a re-run starts from the saved setup); once saved, the Spinner reads its languages from the setup, not from `userConfig`.
+- **Wizard** (`src/setup.ts` holds the pure step machine, the strategy catalogue and the validation; the pane is in `hooks/register.tsx`): languages (Inputs prefilled), level (A1-C2 buttons), optional placement test (only "Skip" and the text "placement test: coming later"; not built), strategies per axis (only implemented ones are buttons, the rest are dim "coming later"), summary and confirm. Back / Next / Skip. Step and drafts live in `$.state` (`setupWizard`, contract in `types/index.d.ts`) and are written only from handlers.
+- **Announcing:** `session.start` toasts once when setup is pending; an `AbovePrompt` line with "Start setup" (hotkey `2`) and "Later" (hotkey `3`, hides it for the session) stays until setup is saved; it shares the hook with the width-fallback button. While pending, the Spinner shows no micro-lesson.
+- **/clear, /resume, /branch:** the saved setup is mirrored in `$.state` (`setupCache`) so the band and Spinner redraw when it changes, but the store is the source of truth: when the mirror is empty (state was reset) the render hooks read `$.store`. `classic.SessionStart` with a `source` other than `startup`/`compact` reloads the mirror and repeats the toast, because "Later" was forgotten with the state.
+- **Not verified in a real session:** how the wizard, the band and the toast actually look; that a pane opened with `focus: true` really gets the keyboard for the Inputs; and that `/clear` resets `$.state` exactly as documented (tests cover the store fallback, not a real reset). Hotkeys `2`/`3` are a choice (`1` is the width-fallback button).
+
 ## Waiting-state trigger (learned from the Doom mod)
 
 Study of `jarrodwatts/intermission` (a mod that shows a multiplayer Doom pane while Claude is busy), 2026-10-02. What we reuse; we do **not** reuse its native engine, shared memory, images or downloaded binary.
@@ -92,7 +101,7 @@ Implemented (2026-10-02, branch `feat/wait-trigger`):
 ## Still open
 
 - Lesson generator: how generated lessons are persisted and validated.
-- Setup: exact steps and how choices are stored (`$.store` vs `userConfig`).
+- Setup: the placement test with the tutor (the step exists and says "coming later"); where learner material and the activity log live beyond "local in `$.store`" (no file locations are asked yet); how the strategy choices reach the core once the strategies are wired to the pane.
 - Exact shape of the strategy interfaces (now five with the lesson generator). Still open, but Pimsleur per lesson forced two additions: `Card.lesson` and `ReviewAlgorithm.dueCards` taking `{ now, currentLesson }` instead of just `now`.
 - Audio: system voice only, or bundled assets.
 - Data model of a lesson/exercise and of progress in `$.store`.

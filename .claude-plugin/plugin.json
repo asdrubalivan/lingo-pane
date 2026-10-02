@@ -10,13 +10,13 @@
     "targetLanguage": {
       "type": "string",
       "title": "Target language",
-      "description": "The language you are learning (for example: English, Ukrainian, French).",
+      "description": "The language you are learning (for example: English, Ukrainian, French). Only the default the guided setup (/lingo setup) starts from; what you confirm there is what the mod uses.",
       "default": "English"
     },
     "nativeLanguage": {
       "type": "string",
       "title": "Native language",
-      "description": "The language explanations are written in.",
+      "description": "The language explanations are written in. Only the default the guided setup (/lingo setup) starts from.",
       "default": "Spanish"
     },
     "openPaneWhileWaiting": {
