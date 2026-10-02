@@ -51,6 +51,17 @@ Plugging in:
 - The mod runs outside the sandbox and sees every prompt and tool call: the README must state what it reads, what it stores and where it sends data.
 - The mod API is early access and may change: pin a minimum Claude Code version.
 
+## Waiting-state trigger (learned from the Doom mod)
+
+Study of `jarrodwatts/intermission` (a mod that shows a multiplayer Doom pane while Claude is busy), 2026-10-02. What we reuse; we do **not** reuse its native engine, shared memory, images or downloaded binary.
+
+- **Busy detection:** `turn.start` plus a short delay (2 s there) opens the pane; `turn.complete` starts a short countdown (3 s there) and closes it. Permission asks (`tool.check` returning ask) and `AskUserQuestion` calls retire the pane so it never covers a prompt.
+- **Spinner text:** rewriting the `Spinner`'s `suffix` in a `ui.render` hook shows one micro-lesson (a word or phrase) per turn in any terminal, with no pane at all.
+- **Width fallback:** a pane the mod opens itself needs enough columns; when it is not placed, a button in the band above the prompt (with a hotkey) offers it instead.
+- **Keys:** a `Client` with `onKey` lets the learner answer cards with a single key.
+
+Build order: the trigger (this section) first, then strategies plug into it.
+
 ## Still open
 
 - Exact shape of the four strategy interfaces.
