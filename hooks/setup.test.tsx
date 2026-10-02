@@ -353,9 +353,9 @@ test('/lingo subcommands: unknown lists the real ones, setup opens the wizard, a
   expect(unknown.text).toContain('/lingo setup')
   expect(opens.length).toBe(0)
 
-  // Plain /lingo opens it (no keyboard grab: setup is done), the second closes it.
+  // Plain /lingo opens it asking for the keyboard (the practice has a field and hotkeys), the second closes it.
   await $.command.run({ command: 'lingo', args: '' })
-  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane' }])
+  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true }])
   await $.command.run({ command: 'lingo', args: '' })
   expect(closes).toEqual(['lingo'])
 

@@ -1,5 +1,6 @@
 // State contract of lingo-pane: what the mod keeps in `$.state` (the waiting-state
-// trigger and the guided setup) and the shape of the setup saved in `$.store`.
+// trigger, the guided setup and the practice session) and the shape of what it
+// saves in `$.store` (the setup and the progress).
 // Self-contained on purpose (no imports): the engine lays it beside dependents.
 
 /** Where the waiting-state trigger is for the current turn. */
@@ -82,6 +83,42 @@ export type LingoSetupCache = { isLoaded: boolean; setup: LingoSetup | null }
 /** "Later" on the band: hides it for the rest of this session. */
 export type LingoSetupBand = { isHidden: boolean }
 
+/** What the practice session saves in `$.store` under the key `progress` (JSON). */
+export type LingoProgress = {
+  version: 1
+  /** Lesson being studied (1-based); one past the last lesson once the pack is finished. */
+  currentLesson: number
+  /** Past attempts per card id, oldest first (the last 20 are kept). */
+  cards: Record<string, { reviews: { at: string; isCorrect: boolean }[] }>
+}
+
+/** What the card on screen is waiting for. */
+export type LingoPracticeStatus = 'asking' | 'correct' | 'revealed' | 'done'
+
+/** The tutor hint button: nothing yet, waiting for the model, answered, or unavailable. */
+export type LingoTutorState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'answered'; text: string }
+  | { kind: 'unavailable'; text: string }
+
+/** The practice session in the `/lingo` pane; `lesson` null means "not started". */
+export type LingoPractice = {
+  lesson: number | null
+  /** Card ids in order: the recall block first, then the new cards. */
+  queue: string[]
+  recallCount: number
+  index: number
+  status: LingoPracticeStatus
+  /** Failed attempts on the current card. */
+  misses: number
+  /** The deterministic hint shown after a miss. */
+  hint: string | null
+  /** What the learner typed on the last miss (the tutor hint reads it). */
+  lastAnswer: string | null
+  tutor: LingoTutorState
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'lingo-pane': {
@@ -89,6 +126,7 @@ declare module 'claude-code' {
       setupWizard: LingoSetupWizard
       setupCache: LingoSetupCache
       setupBand: LingoSetupBand
+      practice: LingoPractice
     }
   }
 }
