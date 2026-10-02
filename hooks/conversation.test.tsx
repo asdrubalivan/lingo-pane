@@ -67,6 +67,7 @@ const world = (on: On, options: { setup?: Record<string, unknown>; store?: Recor
   })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
   return { entries, requests, script, opens, closes, toasts }
 }
 
@@ -243,5 +244,40 @@ test('switch ▸ opens a numbered menu; review starts at once, and the conversat
   await pane.press({ key: 'switch-conversation' })
   expect(await pane.find({ type: 'Text', text: /Hi! What is your job\?/ })).toBeDefined()
   expect(requests.length).toBe(1)
+  await pane.unmount()
+})
+
+test('a unit that ended while Claude worked: the split goes when the turn does, with the summary', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { closes, toasts } = world(on)
+  await openWithCommand($)
+  await $.turn.start({ text: 'build it', turnId: 't1' })
+  await clock.advance(2000)
+  const pane = await mountPane($)
+  for (const line of ['one', 'two', 'three']) await pane.input({ key: 'reply', text: line })
+  expect(closes).toEqual([])
+
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect(closes).toEqual(['lingo'])
+  expect(toasts.at(-1)).toBe('lingo-pane: ✓ 3 sentences, 0 corrections saved')
+  await pane.unmount()
+})
+
+test('a split in use with a unit still running stays when the turn completes', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { closes } = world(on)
+  await openWithCommand($)
+  await $.turn.start({ text: 'build it', turnId: 't1' })
+  await clock.advance(2000)
+  const pane = await mountPane($)
+  await pane.input({ key: 'reply', text: 'one' })
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.advance(5000)
+  expect(closes).toEqual([])
+  // A slash command is not the learner's next prompt.
+  await $.prompt.submit({ text: '/lingo theme pastel', wait: false, origin: { kind: 'composer' } })
+  expect(closes).toEqual([])
+  await $.prompt.submit({ text: 'now the tests', wait: false, origin: { kind: 'composer' } })
+  expect(closes).toEqual(['lingo'])
   await pane.unmount()
 })

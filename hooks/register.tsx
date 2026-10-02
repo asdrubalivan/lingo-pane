@@ -349,6 +349,15 @@ async function saveUnitMistakes($: EngineInterface, unit: LingoUnit, unitNumber:
   await $.store.set(MISTAKES_STORE_KEY, addCorrections(mistakes, unit.corrections, unitNumber, at))
 }
 
+// The summary of the activity on screen when its unit is over; null while one runs.
+function finishedSummary(current: LingoLesson): { activity: LingoActivity; summary: LingoUnitSummary } | null {
+  if (current.activity === 'reading') {
+    return current.reading?.summary == null ? null : { activity: 'reading', summary: current.reading.summary }
+  }
+  if (current.activity === 'review' || current.unit === null || current.unit.summary === null) return null
+  return { activity: current.unit.activity, summary: current.unit.summary }
+}
+
 // A finished unit of any activity: logged; with Claude idle, a split in use
 // closes and says how it went, else the next activity is one press away.
 async function finishActivity($: EngineInterface, activity: LingoActivity, summary: LingoUnitSummary) {
@@ -587,6 +596,13 @@ export const register: Register = (on, options) => {
     $.ui.invalidate('ui.render')
 
     if (closing === 'now') await closeSplit($)
+    // A split in use whose micro-unit already ended while Claude worked: with
+    // Claude idle now, it goes, and says how the unit went.
+    const atRest = finishedSummary(await read($, lesson))
+    if (closing === 'keep' && isKeptOpen(before) && atRest !== null) {
+      await closeSplit($)
+      $.ui.toast(`${LABELS.modName}: ${summaryText(atRest.summary, atRest.activity)}`)
+    }
     if (isCounting) {
       closeTimer = $.clock.after(CLOSE_DELAY_MS, async () => {
         // Untouched until the end of the countdown: it goes; touched meanwhile, it stays.
@@ -602,10 +618,12 @@ export const register: Register = (on, options) => {
   // The learner's next prompt closes a split they were using; an untouched one
   // the mod opened goes with its turn instead.
   on('prompt.submit', async ($, e, next) => {
-    if (isKeptOpen(await read($, wait))) await closeSplit($)
+    // A slash command (`/lingo` itself) is not the learner's next prompt.
+    const isCommand = e.text.trimStart().startsWith('/')
+    if (!isCommand && isKeptOpen(await read($, wait))) await closeSplit($)
     // The contextual opt-in keeps a short, redacted excerpt of the prompt; off, nothing.
     const setup = await currentSetup($)
-    if (setup?.isContextual === true && !e.text.trimStart().startsWith('/')) {
+    if (setup?.isContextual === true && !isCommand) {
       const prompt = excerpt(e.text, MAX_PROMPT_EXCERPT)
       await update($, workContext, c => ({ ...c, prompt }))
     }
