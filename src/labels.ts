@@ -33,6 +33,12 @@ export const LABELS = {
   setupTutorTitle: 'Tutor model',
   setupTutorNote: 'Every tutor reply uses your Claude plan.',
   setupThemeTitle: 'Theme',
+  setupContextTitle: 'Material from your own session (optional)',
+  setupContextOff: 'Off',
+  setupContextOn: 'On',
+  setupContextNote:
+    "On: short excerpts of your last prompt and of Claude's last reply (secrets and emails redacted) go to the tutor, on your Claude plan, as topic ideas. Off by default.",
+  setupSummaryContext: (isOn: boolean) => `Material from your session: ${isOn ? 'on' : 'off'}`,
   setupSummary: 'Summary',
   setupSummaryLanguages: (target: string, native: string, level: string) => `${target} from ${native}, level ${level}`,
   setupSummaryInterests: (interests: readonly string[]) =>

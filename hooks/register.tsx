@@ -92,6 +92,7 @@ import {
 } from '../src/tutor'
 import type { TutorContext } from '../src/tutor'
 import { listenUrl } from '../src/listen'
+import { MAX_ANSWER_EXCERPT, MAX_PROMPT_EXCERPT, NO_CONTEXT, contextForTutor, excerpt } from '../src/context'
 import { generatedOpeningPrompt, parseScenario, pickScenario } from '../src/roleplay'
 import {
   READING_MAX_TOKENS,
@@ -140,6 +141,9 @@ const lesson = atom({ plugin: 'lingo-pane', key: 'lesson' } as const, IDLE_LESSO
 // The Spinner's micro-card for the turn, worked out once when the turn's delay ends.
 const spinnerCard = atom({ plugin: 'lingo-pane', key: 'spinnerCard' } as const, { turnId: null, text: null })
 
+// The contextual mode's material (opt-in): the last prompt and Claude's last reply, cut short and redacted.
+const workContext = atom({ plugin: 'lingo-pane', key: 'workContext' } as const, NO_CONTEXT)
+
 // What the `switch ▸` menu offers.
 const AVAILABLE_ACTIVITIES: readonly LingoActivity[] = ['conversation', 'roleplay', 'reading', 'review']
 
@@ -174,8 +178,13 @@ async function focusKey($: EngineInterface, key: string) {
   await $.ui.focus({ requestId: PANE, key }).catch(() => undefined)
 }
 
+// What the tutor may read of the learner's session: only with the opt-in.
+async function sessionMaterial($: EngineInterface, setup: LingoSetup): Promise<string | null> {
+  return setup.isContextual ? contextForTutor(await read($, workContext)) : null
+}
+
 // What the tutor knows about this learner and this unit.
-function tutorContext(setup: LingoSetup, unit: LingoUnit | null): TutorContext {
+function tutorContext(setup: LingoSetup, unit: LingoUnit | null, material: string | null = null): TutorContext {
   return {
     targetLanguage: setup.targetLanguage,
     nativeLanguage: setup.nativeLanguage,
@@ -184,7 +193,7 @@ function tutorContext(setup: LingoSetup, unit: LingoUnit | null): TutorContext {
     activity: unit?.activity ?? 'conversation',
     scenario: unit?.scenario ?? null,
     weave: unit?.woven ?? [],
-    workContext: null,
+    workContext: material,
   }
 }
 
@@ -218,7 +227,7 @@ async function openTalkUnit($: EngineInterface, setup: LingoSetup, activity: Lin
   const unit = newUnit(`${activity}-${await $.clock.now()}`, activity, scenario, woven)
   await update($, lesson, l => ({ ...l, activity, unit, isMenuOpen: false }))
   await focusKey($, 'reply')
-  const ctx = tutorContext(setup, unit)
+  const ctx = tutorContext(setup, unit, await sessionMaterial($, setup))
   const isMadeUp = pick?.kind === 'generated'
   const reply = await callTutor($, setup, tutorSystem(ctx), isMadeUp ? generatedOpeningPrompt(ctx) : openingPrompt(ctx))
   const turn = reply.isAnswered ? parseTutorTurn(reply.text) : null
@@ -245,7 +254,7 @@ async function openReading($: EngineInterface, setup: LingoSetup) {
     summary: null,
   }
   await update($, lesson, (l): LingoLesson => ({ ...l, activity: 'reading', reading: waiting, isMenuOpen: false }))
-  const ctx = tutorContext(setup, null)
+  const ctx = tutorContext(setup, null, await sessionMaterial($, setup))
   const reply = await callTutor($, setup, readingSystem(ctx), readingPrompt(ctx), READING_MAX_TOKENS)
   const written = reply.isAnswered ? parseReading(id, reply.text) : null
   await update($, lesson, (l): LingoLesson =>
@@ -370,7 +379,7 @@ async function sendReply($: EngineInterface, setup: LingoSetup, text: string) {
   const asked = withLearnerLine(before, text)
   if (asked === before) return
   await updateUnit($, before.id, () => asked)
-  const ctx = tutorContext(setup, asked)
+  const ctx = tutorContext(setup, asked, await sessionMaterial($, setup))
   const reply = await callTutor($, setup, tutorSystem(ctx), replyPrompt(ctx, asked, asked.replies >= UNIT_REPLIES))
   const turn = reply.isAnswered ? parseTutorTurn(reply.text) : null
   await updateUnit($, before.id, u =>
@@ -387,7 +396,7 @@ async function sendHelp($: EngineInterface, setup: LingoSetup) {
   const asked = askedForHelp(before)
   if (asked === before) return
   await updateUnit($, before.id, () => asked)
-  const ctx = tutorContext(setup, asked)
+  const ctx = tutorContext(setup, asked, await sessionMaterial($, setup))
   const reply = await callTutor($, setup, tutorSystem(ctx), helpPrompt(ctx, asked))
   const text = reply.isAnswered ? reply.text.trim() : ''
   await updateUnit($, before.id, u => (u.pending !== 'help' ? u : text === '' ? withoutTutor(u, LABELS.tutorSilentHelp) : withHelp(u, text)))
@@ -558,6 +567,13 @@ export const register: Register = (on, options) => {
     // A subagent's turn also reaches this hook; only the main loop's counts.
     if (e.agentId !== undefined) return next(e)
 
+    // The contextual opt-in keeps a short, redacted excerpt of Claude's reply; off, nothing.
+    const setup = await currentSetup($)
+    if (setup?.isContextual === true && e.answer.trim() !== '') {
+      const answer = excerpt(e.answer, MAX_ANSWER_EXCERPT)
+      await update($, workContext, c => ({ ...c, answer }))
+    }
+
     const turnId = e.turnId
     const before = await read($, wait)
     const complete = { type: 'turn-complete', turnId, isAborted: e.isAborted } as const
@@ -587,6 +603,12 @@ export const register: Register = (on, options) => {
   // the mod opened goes with its turn instead.
   on('prompt.submit', async ($, e, next) => {
     if (isKeptOpen(await read($, wait))) await closeSplit($)
+    // The contextual opt-in keeps a short, redacted excerpt of the prompt; off, nothing.
+    const setup = await currentSetup($)
+    if (setup?.isContextual === true && !e.text.trimStart().startsWith('/')) {
+      const prompt = excerpt(e.text, MAX_PROMPT_EXCERPT)
+      await update($, workContext, c => ({ ...c, prompt }))
+    }
     return next(e)
   })
 
@@ -939,6 +961,17 @@ export const register: Register = (on, options) => {
                 <Text color={preview.tutor}>tutor</Text>
                 <Text color={preview.you}>you</Text>
               </Box>
+              <Text bold>{LABELS.setupContextTitle}</Text>
+              {choices(
+                'context',
+                [
+                  { id: 'off', label: LABELS.setupContextOff },
+                  { id: 'on', label: LABELS.setupContextOn },
+                ],
+                draft.isContextual ? 'on' : 'off',
+                id => dispatch({ type: 'set-contextual', isOn: id === 'on' }),
+              )}
+              <Text dimColor>{LABELS.setupContextNote}</Text>
             </Box>
           )}
 
@@ -954,6 +987,7 @@ export const register: Register = (on, options) => {
                   themeByName(draft.theme).label,
                 )}
               </Text>
+              <Text dimColor>{LABELS.setupSummaryContext(draft.isContextual)}</Text>
               {STRATEGY_AXES.map(info => (
                 <Text key={`summary-${info.axis}`} dimColor>
                   {info.title}: {info.options.find(o => o.id === draft.strategies[info.axis])?.label ?? draft.strategies[info.axis]}

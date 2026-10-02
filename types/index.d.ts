@@ -60,8 +60,8 @@ export type LingoTutorModel = 'sonnet' | 'haiku' | 'opus'
 
 /**
  * What the guided setup saves in `$.store` under the key `setup` (JSON).
- * Still version 1: a setup saved before `interests`, `splitShare`, `tutorModel`
- * and `theme` existed reads back with their defaults.
+ * Still version 1: a setup saved before `interests`, `splitShare`, `tutorModel`,
+ * `theme` and `isContextual` existed reads back with their defaults.
  */
 export type LingoSetup = {
   version: 1
@@ -75,6 +75,8 @@ export type LingoSetup = {
   splitShare: number
   tutorModel: LingoTutorModel
   theme: LingoThemeName
+  /** Opt-in: short excerpts of the learner's own session (last prompt, Claude's last reply) feed the tutor's topics. */
+  isContextual: boolean
   /** ISO timestamp of the confirmation. */
   completedAt: string
 }
@@ -101,6 +103,7 @@ export type LingoSetupDraft = {
   splitShare: number
   tutorModel: LingoTutorModel
   theme: LingoThemeName
+  isContextual: boolean
 }
 
 /** The wizard in the `/lingo` pane. `draft` null means "still the defaults". */
@@ -279,6 +282,9 @@ export type LingoMistakeCard = {
 /** What the mod saves in `$.store` under `mistakes`. */
 export type LingoMistakes = { version: 1; cards: LingoMistakeCard[] }
 
+/** The contextual mode's material: the learner's last prompt and Claude's last reply, cut short and redacted. Empty unless opted in. */
+export type LingoWorkContext = { prompt: string | null; answer: string | null }
+
 /** The micro-card the Spinner carries for one turn, worked out when the turn's delay ends. */
 export type LingoSpinnerCard = { turnId: string | null; text: string | null }
 
@@ -292,6 +298,7 @@ declare module 'claude-code' {
       practice: LingoPractice
       lesson: LingoLesson
       spinnerCard: LingoSpinnerCard
+      workContext: LingoWorkContext
     }
   }
 }

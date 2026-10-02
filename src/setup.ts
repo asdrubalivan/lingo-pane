@@ -118,6 +118,8 @@ const PREFERENCE_DEFAULTS = {
   splitShare: DEFAULT_SPLIT_SHARE,
   tutorModel: DEFAULT_TUTOR_MODEL,
   theme: DEFAULT_THEME,
+  // The contextual mode is opt-in.
+  isContextual: false,
 } as const
 
 /** The assistant's starting point: the `userConfig` languages, no level yet. */
@@ -143,6 +145,7 @@ export function draftFromSetup(setup: LingoSetup): LingoSetupDraft {
     splitShare: setup.splitShare,
     tutorModel: setup.tutorModel,
     theme: setup.theme,
+    isContextual: setup.isContextual,
   }
 }
 
@@ -196,6 +199,7 @@ export type WizardEvent =
   | { type: 'set-share'; share: number }
   | { type: 'set-tutor'; model: LingoTutorModel }
   | { type: 'set-theme'; theme: LingoThemeName }
+  | { type: 'set-contextual'; isOn: boolean }
   | { type: 'next' }
   | { type: 'back' }
   /** Placement: leave the optional test. Strategies: take the defaults and go on. */
@@ -236,6 +240,8 @@ export function wizardTransition(
       return isTutorModel(event.model) ? { ...state, draft: { ...draft, tutorModel: event.model } } : state
     case 'set-theme':
       return isThemeName(event.theme) ? { ...state, draft: { ...draft, theme: event.theme } } : state
+    case 'set-contextual':
+      return { ...state, draft: { ...draft, isContextual: event.isOn === true } }
     case 'next':
       return canAdvance(state.step, draft) && state.step !== 'summary'
         ? { ...state, draft, step: stepAt(STEPS.indexOf(state.step) + 1) }
@@ -273,6 +279,7 @@ export function buildSetup(draft: LingoSetupDraft, completedAt: string): LingoSe
     splitShare: draft.splitShare,
     tutorModel: draft.tutorModel,
     theme: draft.theme,
+    isContextual: draft.isContextual,
     completedAt,
   }
 }
@@ -289,12 +296,13 @@ const isText = (value: unknown): value is string => typeof value === 'string' &&
  * Whatever `$.store` held under `setup`, as a setup, or null when it is not one
  * this version understands: missing, corrupt, another version, an unknown
  * strategy id. Null means setup is pending. The fields added after the first
- * setups were saved (interests, split share, tutor model, theme) take their
- * defaults when missing or unreadable, so an earlier setup stays done.
+ * setups were saved (interests, split share, tutor model, theme, the contextual
+ * opt-in) take their defaults when missing or unreadable, so an earlier setup
+ * stays done.
  */
 export function parseSetup(raw: unknown): LingoSetup | null {
   if (!isObject(raw) || raw.version !== SETUP_VERSION) return null
-  const { targetLanguage, nativeLanguage, level, strategies, completedAt, interests, splitShare, tutorModel, theme } = raw
+  const { targetLanguage, nativeLanguage, level, strategies, completedAt, interests, splitShare, tutorModel, theme, isContextual } = raw
   if (!isText(targetLanguage) || !isText(nativeLanguage) || !isText(completedAt)) return null
   if (typeof level !== 'string' || !LEVELS.includes(level as LingoLevel)) return null
   if (!isObject(strategies)) return null
@@ -318,6 +326,8 @@ export function parseSetup(raw: unknown): LingoSetup | null {
     splitShare: isSplitShare(splitShare) ? splitShare : DEFAULT_SPLIT_SHARE,
     tutorModel: isTutorModel(tutorModel) ? tutorModel : DEFAULT_TUTOR_MODEL,
     theme: isThemeName(theme) ? theme : DEFAULT_THEME,
+    // Only an explicit true turns the opt-in on.
+    isContextual: isContextual === true,
     completedAt,
   }
 }

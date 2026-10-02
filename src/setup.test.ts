@@ -38,6 +38,7 @@ const SAVED = {
   splitShare: 45,
   tutorModel: 'haiku',
   theme: 'pastel',
+  isContextual: false,
 }
 
 test('the wizard walks languages, level, interests, placement, strategies, preferences, summary', () => {
@@ -69,7 +70,8 @@ test('the wizard walks languages, level, interests, placement, strategies, prefe
 })
 
 test('the new preferences start at their defaults and only valid values are taken', () => {
-  expect(defaults).toMatchObject({ interests: '', splitShare: 40, tutorModel: 'sonnet', theme: 'atardecer' })
+  expect(defaults).toMatchObject({ interests: '', splitShare: 40, tutorModel: 'sonnet', theme: 'atardecer', isContextual: false })
+  expect(run([{ type: 'set-contextual', isOn: true }]).draft?.isContextual).toBe(true)
   const picked = run([
     { type: 'set-share', share: 50 },
     { type: 'set-tutor', model: 'opus' },
@@ -145,8 +147,10 @@ test('buildSetup saves a valid draft trimmed, and refuses an incomplete or inval
     splitShare: 40,
     tutorModel: 'sonnet',
     theme: 'atardecer',
+    isContextual: false,
     completedAt: 'now',
   })
+  expect(buildSetup({ ...draft, isContextual: true }, 'now')?.isContextual).toBe(true)
   expect(buildSetup({ ...draft, interests: 'chess, chess, jazz', theme: 'pastel' }, 'now')).toMatchObject({
     interests: ['chess', 'jazz'],
     theme: 'pastel',
@@ -190,7 +194,10 @@ test('parseSetup drops unknown extra fields instead of carrying them', () => {
 
 test('a setup saved before the new preferences stays done, with their defaults', () => {
   const read = parseSetup(SAVED_V1)
-  expect(read).toEqual({ ...SAVED_V1, interests: [], splitShare: 40, tutorModel: 'sonnet', theme: 'atardecer' })
+  expect(read).toEqual({ ...SAVED_V1, interests: [], splitShare: 40, tutorModel: 'sonnet', theme: 'atardecer', isContextual: false })
+  // Only an explicit true is the opt-in.
+  expect(parseSetup({ ...SAVED, isContextual: 'yes' })?.isContextual).toBe(false)
+  expect(parseSetup({ ...SAVED, isContextual: true })?.isContextual).toBe(true)
   // Unreadable new fields fall back to the defaults too; they never make it pending.
   expect(parseSetup({ ...SAVED, splitShare: 99, tutorModel: 'gpt', theme: 'neon', interests: 'chess' })).toMatchObject({
     splitShare: 40,
