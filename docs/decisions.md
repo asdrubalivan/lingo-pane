@@ -92,7 +92,7 @@ Implemented (2026-10-02, branch `feat/wait-trigger`):
 
 - Lesson generator: how generated lessons are persisted and validated.
 - Setup: exact steps and how choices are stored (`$.store` vs `userConfig`).
-- Exact shape of the four strategy interfaces.
+- Exact shape of the strategy interfaces (now five with the lesson generator). Still open, but Pimsleur per lesson forced two additions: `Card.lesson` and `ReviewAlgorithm.dueCards` taking `{ now, currentLesson }` instead of just `now`.
 - Audio: system voice only, or bundled assets.
 - Data model of a lesson/exercise and of progress in `$.store`.
 - Whether to also seek listing in Anthropic's directory (unconfirmed that mods are accepted).
