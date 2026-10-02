@@ -80,6 +80,14 @@ Study of `jarrodwatts/intermission` (a mod that shows a multiplayer Doom pane wh
 
 Build order: the trigger (this section) first, then strategies plug into it.
 
+Implemented (2026-10-02, branch `feat/wait-trigger`):
+
+- State machine in `src/wait-machine.ts` (pure), wired in `hooks/register.tsx`; UI state in `$.state` (contract in `types/index.d.ts`). Timers are module variables, so a hot reload drops them.
+- Event names checked against the 2.1.287 declarations: `turn.start` (no `agentId`: a subagent's run raises none), `turn.complete` (`agentId` present for subagents, `isAborted`), `tool.check` (`decision: 'ask'`, and `tool_use_id` set on a real call), `tool.call` with `tool === 'AskUserQuestion'`, `ui.close` (`origin.kind`).
+- Micro-lesson: `Spinner` `suffix` rewritten once per turn from `src/microcards.ts` (8 embedded English -> Spanish cards). Any other pair shows "no built-in cards ...".
+- Width fallback: opt-in through the `openPaneWhileWaiting` option (off by default, since a pane opened by a timer contradicts "the lesson pane opens from `/lingo`"). When on and the pane is not placed, an `AbovePrompt` button (hotkey `1`) opens it; a press is an asked open, placed at any width.
+- Not verified in a real session: how the Spinner and the band actually look, and the order of `tool.check` / `tool.call` around a permission dialog (the resume after an ask relies on the next `tool.call`).
+
 ## Still open
 
 - Lesson generator: how generated lessons are persisted and validated.
