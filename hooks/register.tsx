@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { DEMO_CARDS, DEMO_LESSON_COUNT, DEMO_PACK_TITLE } from '../src/content/demo-english-a1'
+import type { LessonQueue } from '../src/lesson'
 import {
   IDLE_PRACTICE,
   PROGRESS_STORE_KEY,
@@ -91,6 +92,18 @@ import {
 } from '../src/tutor'
 import type { TutorContext } from '../src/tutor'
 import { listenUrl } from '../src/listen'
+import {
+  MAX_WOVEN,
+  MISTAKES_STORE_KEY,
+  addCorrections,
+  dueMistakes,
+  mistakeAsCard,
+  parseMistakes,
+  pickForTurn,
+  recordMistakeReview,
+  spinnerLine,
+  wovenOutcome,
+} from '../src/mistakes'
 
 const PANE = 'lingo'
 const PANE_TITLE = 'lingo-pane'
@@ -113,6 +126,9 @@ const practice = atom({ plugin: 'lingo-pane', key: 'practice' } as const, IDLE_P
 
 // The lesson in the split: the activity on screen and its micro-unit (contract: types/index.d.ts).
 const lesson = atom({ plugin: 'lingo-pane', key: 'lesson' } as const, IDLE_LESSON)
+
+// The Spinner's micro-card for the turn, worked out once when the turn's delay ends.
+const spinnerCard = atom({ plugin: 'lingo-pane', key: 'spinnerCard' } as const, { turnId: null, text: null })
 
 // What the split offers today; the rest of the menu comes with role-play and reading.
 const AVAILABLE_ACTIVITIES: readonly LingoActivity[] = ['conversation', 'review']
@@ -157,7 +173,7 @@ function tutorContext(setup: LingoSetup, unit: LingoUnit): TutorContext {
     interests: setup.interests,
     activity: unit.activity,
     scenario: unit.scenario,
-    weave: [],
+    weave: unit.woven,
     workContext: null,
   }
 }
@@ -181,7 +197,11 @@ async function updateUnit($: EngineInterface, id: string, change: (unit: LingoUn
 
 // A new micro-unit of conversation (or role-play): the tutor opens it.
 async function openTalkUnit($: EngineInterface, setup: LingoSetup, activity: LingoUnit['activity']) {
-  const unit = newUnit(`${activity}-${await $.clock.now()}`, activity)
+  // The tutor weaves in a couple of the mistakes due at this unit.
+  const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
+  const due = dueMistakes(parseMistakes(await $.store.get(MISTAKES_STORE_KEY)), log.units + 1)
+  const woven = due.slice(0, MAX_WOVEN).map(c => ({ id: c.id, wrong: c.wrong, right: c.right }))
+  const unit = newUnit(`${activity}-${await $.clock.now()}`, activity, null, woven)
   await update($, lesson, l => ({ ...l, activity, unit, isMenuOpen: false }))
   await focusKey($, 'reply')
   const ctx = tutorContext(setup, unit)
@@ -197,14 +217,30 @@ async function startReview($: EngineInterface) {
   await update($, lesson, (l): LingoLesson => ({ ...l, activity: 'review', isMenuOpen: false }))
   const session = await read($, practice)
   if (session.lesson !== null && session.status !== 'done') return
+  const queue = await reviewQueue($)
+  if (queue.recall.length + queue.fresh.length === 0) return
   const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-  if (isFinished(latest, DEMO_LESSON_COUNT)) return
-  const queue = buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
   await update($, practice, () => startPractice(queue, latest.currentLesson))
   await focusKey($, 'answer-0')
 }
 
+// The review: the mistakes due at the next unit first, then the built-in pack's Pimsleur lesson.
+async function reviewQueue($: EngineInterface): Promise<LessonQueue> {
+  const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
+  const due = dueMistakes(parseMistakes(await $.store.get(MISTAKES_STORE_KEY)), log.units + 1).map(c => c.id)
+  const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+  const pack = isFinished(latest, DEMO_LESSON_COUNT)
+    ? { recall: [], fresh: [] }
+    : buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
+  return { recall: [...due, ...pack.recall], fresh: pack.fresh }
+}
+
 async function startActivity($: EngineInterface, setup: LingoSetup, activity: LingoActivity) {
+  // A talk unit left half done for another one closes here: its mistakes are kept.
+  const left = (await read($, lesson)).unit
+  if (activity !== 'review' && left !== null && left.summary === null) {
+    await saveUnitMistakes($, left, parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)).units + 1)
+  }
   if (activity === 'review') return startReview($)
   if (activity === 'conversation') return openTalkUnit($, setup, activity)
 }
@@ -226,11 +262,25 @@ async function ensureLesson($: EngineInterface, setup: LingoSetup) {
   return startActivity($, setup, suggestActivity(log, AVAILABLE_ACTIVITIES))
 }
 
-// A finished unit: logged; with Claude idle, a split in use closes and says how it went.
+// A unit's mistakes become cards (numbered by the unit), and the woven ones count as reviewed.
+async function saveUnitMistakes($: EngineInterface, unit: LingoUnit, unitNumber: number) {
+  if (unit.corrections.length === 0 && unit.woven.length === 0) return
+  const at = await nowIso($)
+  // Re-read before writing: the store is shared between sessions.
+  let mistakes = parseMistakes(await $.store.get(MISTAKES_STORE_KEY))
+  for (const card of unit.woven) {
+    const outcome = wovenOutcome(unit.lines, card)
+    if (outcome !== null) mistakes = recordMistakeReview(mistakes, card.id, at, outcome)
+  }
+  await $.store.set(MISTAKES_STORE_KEY, addCorrections(mistakes, unit.corrections, unitNumber, at))
+}
+
+// A finished unit: logged, its mistakes made cards; with Claude idle, a split in use closes and says how it went.
 async function finishUnit($: EngineInterface, unit: LingoUnit) {
   if (unit.summary === null) return
-  const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
-  await $.store.set(ACTIVITY_STORE_KEY, recordUnit(log, unit.activity, unit.summary, await nowIso($)))
+  const log = recordUnit(parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)), unit.activity, unit.summary, await nowIso($))
+  await $.store.set(ACTIVITY_STORE_KEY, log)
+  await saveUnitMistakes($, unit, log.units)
   const state = await read($, wait)
   if (!isClaudeWorking(state) && isKeptOpen(state)) {
     await closeSplit($)
@@ -395,9 +445,16 @@ export const register: Register = (on, options) => {
     delayTimer = $.clock.after(SHOW_DELAY_MS, async () => {
       await dispatchWait($, { type: 'delay-elapsed', turnId })
 
+      // The Spinner's card for this turn: one of the learner's own mistakes, due ones first.
+      const setup = await currentSetup($)
+      if (setup !== null) {
+        const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
+        const mistake = pickForTurn(parseMistakes(await $.store.get(MISTAKES_STORE_KEY)), log.units + 1, turnId)
+        await update($, spinnerCard, () => ({ turnId, text: mistake === null ? null : spinnerLine(mistake) }))
+      }
+
       // Nothing opens while the setup is pending, once retired for a permission
       // ask, or over a split that is already open.
-      const setup = await currentSetup($)
       const state = await read($, wait)
       if (setup === null || state.phase !== 'showing' || state.pane !== 'none') return
       if ((await $.ui.panes()).some(p => p.id === PANE)) return
@@ -510,7 +567,10 @@ export const register: Register = (on, options) => {
     const setup = await currentSetup($)
     if (setup === null) return next(e)
 
-    const suffix = spinnerSuffix(microLesson(setup.targetLanguage, setup.nativeLanguage, state.turnId))
+    // The learner's own mistake when there is one; the built-in cards otherwise.
+    const card = await read($, spinnerCard)
+    const line = card.turnId === state.turnId && card.text !== null ? card.text : microLesson(setup.targetLanguage, setup.nativeLanguage, state.turnId)
+    const suffix = spinnerSuffix(line)
 
     return next({ ...e, props: { ...e.props, suffix } })
   })
@@ -1066,22 +1126,34 @@ export const register: Register = (on, options) => {
       const learner = setup as LingoSetup
       const session = await read($, practice)
       const progress = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-      const cardOf = (id: string | undefined) => DEMO_CARDS.find(c => c.id === id)
+      const mistakes = parseMistakes(await $.store.get(MISTAKES_STORE_KEY))
+      const mistakeOf = (id: string | undefined) => mistakes.cards.find(c => c.id === id)
+      const cardOf = (id: string | undefined) => {
+        const mistake = mistakeOf(id)
+        return mistake === undefined ? DEMO_CARDS.find(c => c.id === id) : mistakeAsCard(mistake)
+      }
       const card = session.lesson === null ? undefined : cardOf(session.queue[session.index])
+      const cardMistake = session.lesson === null ? undefined : mistakeOf(session.queue[session.index])
       const color = { color: theme.fg, dimColor: dim }
 
       const start = async () => {
         await touch($)
         const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-        const queue = buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
+        const queue = await reviewQueue($)
         await update($, practice, () => startPractice(queue, latest.currentLesson))
         await focusKey($, 'answer-0')
       }
 
-      // Every attempt goes into the progress: re-read, add, write.
+      // Every attempt is recorded: a mistake card's in the mistakes, a pack card's in the progress.
       const record = async (cardId: string, isCorrect: boolean) => {
+        const at = await nowIso($)
+        if (mistakeOf(cardId) !== undefined) {
+          const latest = parseMistakes(await $.store.get(MISTAKES_STORE_KEY))
+          await $.store.set(MISTAKES_STORE_KEY, recordMistakeReview(latest, cardId, at, isCorrect))
+          return
+        }
         const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-        await $.store.set(PROGRESS_STORE_KEY, recordAttempt(latest, cardId, await nowIso($), isCorrect))
+        await $.store.set(PROGRESS_STORE_KEY, recordAttempt(latest, cardId, at, isCorrect))
       }
 
       const showAnswer = async () => {
@@ -1159,16 +1231,19 @@ export const register: Register = (on, options) => {
 
       if (session.lesson === null) {
         const finished = isFinished(progress, DEMO_LESSON_COUNT)
-        const queue = buildQueue(DEMO_CARDS, progress, new Date(await $.clock.now()))
+        const queue = await reviewQueue($)
+        const isEmpty = queue.recall.length + queue.fresh.length === 0
         return (
           <Box flexDirection="column" marginTop={1}>
             {packNote}
             <Text {...color}>
-              {finished
+              {isEmpty
                 ? LABELS.reviewDemoFinished(DEMO_LESSON_COUNT)
-                : LABELS.reviewLessonIntro(progress.currentLesson, DEMO_LESSON_COUNT, queue.recall.length, queue.fresh.length)}
+                : finished
+                  ? LABELS.reviewMistakesIntro(queue.recall.length)
+                  : LABELS.reviewLessonIntro(progress.currentLesson, DEMO_LESSON_COUNT, queue.recall.length, queue.fresh.length)}
             </Text>
-            {!finished && <Button key="start" label={LABELS.reviewStart} variant="primary" autoFocus onPress={start} />}
+            {!isEmpty && <Button key="start" label={LABELS.reviewStart} variant="primary" autoFocus onPress={start} />}
           </Box>
         )
       }
@@ -1177,7 +1252,7 @@ export const register: Register = (on, options) => {
         return (
           <Box flexDirection="column" marginTop={1}>
             <Text color={theme.you} bold dimColor={dim}>
-              {LABELS.reviewLessonDone(session.lesson)}
+              {session.lesson > DEMO_LESSON_COUNT ? LABELS.reviewDone : LABELS.reviewLessonDone(session.lesson)}
             </Text>
             {session.lesson >= DEMO_LESSON_COUNT && <Text {...color}>{LABELS.reviewDemoLast}</Text>}
             <Button
@@ -1199,11 +1274,33 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column" marginTop={1}>
           {packNote}
           <Text color={theme.dim} dimColor={dim}>
-            {LABELS.reviewCardOf(session.lesson, session.index + 1, session.queue.length, isRecall)}
+            {cardMistake !== undefined
+              ? LABELS.reviewMistakeOf(session.index + 1, session.queue.length)
+              : LABELS.reviewCardOf(session.lesson, session.index + 1, session.queue.length, isRecall)}
           </Text>
-          <Text color={theme.fg} bold dimColor={dim}>
-            {card?.prompt ?? '?'}
-          </Text>
+          {cardMistake === undefined ? (
+            <Text color={theme.fg} bold dimColor={dim}>
+              {card?.prompt ?? '?'}
+            </Text>
+          ) : (
+            // The learner's own line, the wrong words marked: type the right ones.
+            <Text color={theme.fg} bold dimColor={dim}>
+              {markedParts(cardMistake.sentence, cardMistake.wrong).map(([part, isMark], at) =>
+                isMark ? (
+                  <Text key={`mark-${at}`} color={theme.err} underline>
+                    {part}
+                  </Text>
+                ) : (
+                  part
+                ),
+              )}
+            </Text>
+          )}
+          {cardMistake !== undefined && session.status === 'revealed' && cardMistake.note !== '' && (
+            <Text color={theme.dim} dimColor={dim}>
+              {cardMistake.note}
+            </Text>
+          )}
 
           {session.status === 'asking' && (
             <Box flexDirection="column">

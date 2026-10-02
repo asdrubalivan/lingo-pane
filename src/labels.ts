@@ -81,6 +81,9 @@ export const LABELS = {
   reviewDemoFinished: (count: number) => `Demo finished: all ${count} lessons are done. Come back to review, or wait for the lesson generator.`,
   reviewLessonIntro: (lesson: number, count: number, recall: number, fresh: number) =>
     `Lesson ${lesson} of ${count}: ${recall} to recall, ${fresh} new.`,
+  reviewMistakesIntro: (count: number) => `Your mistakes: ${count} to review.`,
+  reviewMistakeOf: (card: number, of: number) => `Your mistake - card ${card} of ${of}: type the right words for the marked ones`,
+  reviewDone: 'Review done',
   reviewStart: 'Start lesson',
   reviewLessonDone: (lesson: number) => `Lesson ${lesson} done`,
   reviewDemoLast: 'Demo finished: that was the last lesson.',

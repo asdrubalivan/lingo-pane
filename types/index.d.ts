@@ -210,8 +210,8 @@ export type LingoUnit = {
   summary: LingoUnitSummary | null
   /** Role-play only. */
   scenario: LingoScenario | null
-  /** Ids of the due cards the tutor was asked to weave in. */
-  woven: string[]
+  /** The due mistake cards the tutor was asked to weave in. */
+  woven: { id: string; wrong: string; right: string }[]
 }
 
 /** The lesson in the split: the activity on screen and the unit in progress. */
@@ -234,6 +234,26 @@ export type LingoActivityLog = {
   recent: { activity: LingoActivity; at: string; sentences: number; corrections: number }[]
 }
 
+/** A card made from a mistake: the learner's line, the wrong words and the right ones. */
+export type LingoMistakeCard = {
+  id: string
+  wrong: string
+  right: string
+  note: string
+  sentence: string
+  /** The micro-unit it came from (1-based): Pimsleur brings it back at units n+1, n+3 and n+7. */
+  unit: number
+  createdAt: string
+  /** Oldest first, the last 20. */
+  reviews: { at: string; isCorrect: boolean }[]
+}
+
+/** What the mod saves in `$.store` under `mistakes`. */
+export type LingoMistakes = { version: 1; cards: LingoMistakeCard[] }
+
+/** The micro-card the Spinner carries for one turn, worked out when the turn's delay ends. */
+export type LingoSpinnerCard = { turnId: string | null; text: string | null }
+
 declare module 'claude-code' {
   interface PluginState {
     'lingo-pane': {
@@ -243,6 +263,7 @@ declare module 'claude-code' {
       setupBand: LingoSetupBand
       practice: LingoPractice
       lesson: LingoLesson
+      spinnerCard: LingoSpinnerCard
     }
   }
 }

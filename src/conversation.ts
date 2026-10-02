@@ -18,7 +18,7 @@ export function newUnit(
   id: string,
   activity: LingoUnit['activity'],
   scenario: LingoScenario | null = null,
-  woven: string[] = [],
+  woven: LingoUnit['woven'] = [],
 ): LingoUnit {
   return {
     id,
