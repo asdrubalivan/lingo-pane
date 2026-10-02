@@ -48,6 +48,11 @@ export const LABELS = {
   skip: 'Skip',
   confirm: 'Confirm',
 
+  // --- The split -------------------------------------------------------------------
+  keysHere: '● keys here · Esc back to the prompt',
+  keysAway: '○ Ctrl+X Tab to come back',
+  waitingForYou: 'Claude needs you: answer below. The lesson waits here.',
+
   // --- Band above the prompt -----------------------------------------------------
   bandSetupPending: 'lingo-pane: setup pending. ',
   bandStartSetup: 'Start setup',

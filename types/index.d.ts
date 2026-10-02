@@ -11,25 +11,34 @@ export type LingoWaitPhase =
   | 'armed'
   /** The micro-lesson is on screen. */
   | 'showing'
-  /** Claude needs the learner (a permission ask or a question): nothing is shown. */
+  /** Claude needs the learner (a permission ask or a question): the split dims and waits. */
   | 'paused'
   /** The turn completed; the lesson stays a few seconds, then goes. */
   | 'closing'
 
-/** What became of the lesson pane the mod itself opened while waiting. */
+/** Where the lesson split stands. */
 export type LingoWaitPane =
-  /** The mod has no pane open (or the person opened it themselves). */
+  /** Not open. */
   | 'none'
-  /** The mod opened it and it is drawn: the mod closes it when the turn ends. */
+  /** Open and drawn (docked beside the transcript, or inline). */
   | 'open'
-  /** The mod tried and the pane was not placed (narrow terminal): a button offers it. */
+  /** It could not seat while Claude works (main screen, narrow terminal, not placed): the band offers it. */
   | 'offered'
+
+/** Who opened the split that is open: the mod by itself while waiting, or the person (`/lingo`, the band). */
+export type LingoPaneOpener = 'mod' | 'person'
 
 export type LingoWaitState = {
   phase: LingoWaitPhase
   /** The main-loop turn the trigger follows; null while idle. */
   turnId: string | null
+  /** When that turn started (`$.clock` milliseconds); null while idle. */
+  startedAt: number | null
   pane: LingoWaitPane
+  /** Null unless `pane` is `open`. */
+  opener: LingoPaneOpener | null
+  /** A key typed in the split's field or a press since it opened (getting focus does not count). */
+  isTouched: boolean
 }
 
 /** CEFR level the learner starts at. */
