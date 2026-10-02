@@ -8,6 +8,8 @@ export type Card = {
   prompt: string
   answer: string
   tags: string[]
+  /** Lesson the card belongs to (1-based). Used by lesson-based review. */
+  lesson: number
 }
 
 export type Progress = {
@@ -22,10 +24,17 @@ export interface ContentStore {
   listCards(): Promise<Card[]>
 }
 
+/** What the algorithm needs to know about "now". */
+export type ReviewContext = {
+  now: Date
+  /** Lesson the learner is starting or studying (1-based). */
+  currentLesson: number
+}
+
 /** Decides which cards are due. */
 export interface ReviewAlgorithm {
   readonly id: string
-  dueCards(cards: Card[], progress: Progress[], now: Date): Card[]
+  dueCards(cards: Card[], progress: Progress[], ctx: ReviewContext): Card[]
 }
 
 /** Decides how the tutor reacts to an answer. */

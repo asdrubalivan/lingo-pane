@@ -64,7 +64,7 @@ Build order: the trigger (this section) first, then strategies plug into it.
 
 ## Still open
 
-- Exact shape of the four strategy interfaces.
+- Exact shape of the four strategy interfaces. Still open, but Pimsleur per lesson forced two additions: `Card.lesson` and `ReviewAlgorithm.dueCards` taking `{ now, currentLesson }` instead of just `now`.
 - Audio: system voice only, or bundled assets.
 - Data model of a lesson/exercise and of progress in `$.store`.
 - Whether to also seek listing in Anthropic's directory (unconfirmed that mods are accepted).
