@@ -9,8 +9,9 @@ const SAVED = {
   completedAt: '2026-10-02T10:00:00.000Z',
 }
 
-test('once set up, the lesson pane greets with the saved languages and level', async ($, on) => {
+test('once set up, the lesson pane shows the saved languages and level and offers lesson 1', async ($, on) => {
   mock.store(on, { setup: SAVED })
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({
       plugin: 'lingo-pane',
@@ -29,6 +30,8 @@ test('once set up, the lesson pane greets with the saved languages and level', a
     })
     expect(await ui.find({ type: 'Text', text: /Learning English from Spanish, level B1/ })).toBeDefined()
     expect(await ui.find({ key: 'native-0' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Lesson 1 of 6: 0 to recall, 5 new/ })).toBeDefined()
+    expect(await ui.find({ key: 'start' })).toBeDefined()
     await ui.unmount()
   }
 })

@@ -1,6 +1,24 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
+import { DEMO_CARDS, DEMO_LESSON_COUNT, DEMO_PACK_TITLE } from '../src/content/demo-english-a1'
+import {
+  IDLE_PRACTICE,
+  PROGRESS_STORE_KEY,
+  advanceLesson,
+  afterAnswer,
+  buildQueue,
+  isCorrectAnswer,
+  isFinished,
+  leaksAnswer,
+  nextCard,
+  parseProgress,
+  recordAttempt,
+  reveal,
+  startPractice,
+  tutorPrompt,
+} from '../src/lesson'
+import { socratic } from '../src/correction/socratic'
 import { parseLingoArgs, unknownSubcommandText } from '../src/command'
 import { microLesson, spinnerSuffix } from '../src/microcards'
 import {
@@ -41,6 +59,12 @@ const wait = atom({ plugin: 'lingo-pane', key: 'wait' } as const, INITIAL_WAIT)
 const setupWizard = atom({ plugin: 'lingo-pane', key: 'setupWizard' } as const, CLOSED_WIZARD)
 const setupCache = atom({ plugin: 'lingo-pane', key: 'setupCache' } as const, { isLoaded: false, setup: null })
 const setupBand = atom({ plugin: 'lingo-pane', key: 'setupBand' } as const, { isHidden: false })
+
+// The practice session in the pane (contract: types/index.d.ts). Progress lives
+// in `$.store` under `progress`; this is only where the learner is right now.
+const practice = atom({ plugin: 'lingo-pane', key: 'practice' } as const, IDLE_PRACTICE)
+
+const TUTOR_TIMEOUT_MS = 20000
 
 const PENDING_TOAST = 'lingo-pane: setup pending. Run /lingo setup (or press 2 in the band above the prompt).'
 
@@ -105,12 +129,8 @@ export const register: Register = (on, options) => {
       return {}
     }
 
-    // Pending setup: the pane shows the wizard, so ask for the keyboard too.
-    if (setup === null) {
-      await $.ui.open({ id: PANE, title: 'lingo-pane', focus: true })
-    } else {
-      await $.ui.open({ id: PANE, title: 'lingo-pane' })
-    }
+    // The practice needs the keyboard too (the answer field and the hotkeys).
+    await $.ui.open({ id: PANE, title: 'lingo-pane', focus: true })
 
     return {}
   })
@@ -314,15 +334,179 @@ export const register: Register = (on, options) => {
 
     const { Box, Button, Input, Text } = $.ui.resolve(e)
 
-    // Setup pending, or being redone: the wizard. Otherwise the greeting.
+    // Setup pending, or being redone: the wizard. Otherwise the practice.
     if (setup !== null && !wizard.isOpen) {
-      return (
+      const session = await read($, practice)
+      const progress = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+      const nowIso = async () => new Date(await $.clock.now()).toISOString()
+      const cardOf = (id: string | undefined) => DEMO_CARDS.find(c => c.id === id)
+      const card = session.lesson === null ? undefined : cardOf(session.queue[session.index])
+
+      const start = async () => {
+        const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+        const queue = buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
+        await update($, practice, () => startPractice(queue, latest.currentLesson))
+      }
+
+      // Every attempt goes into the progress: re-read, add, write.
+      const record = async (cardId: string, isCorrect: boolean) => {
+        const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+        await $.store.set(PROGRESS_STORE_KEY, recordAttempt(latest, cardId, await nowIso(), isCorrect))
+      }
+
+      const submit = async (value: string) => {
+        const latest = await read($, practice)
+        const current = cardOf(latest.queue[latest.index])
+        if (latest.status !== 'asking' || current === undefined || value.trim() === '') return
+        const isCorrect = isCorrectAnswer(value, current.answer)
+        await record(current.id, isCorrect)
+        await update($, practice, s => afterAnswer(s, isCorrect, current.answer, value.trim()))
+      }
+
+      const showAnswer = async () => {
+        const latest = await read($, practice)
+        const current = cardOf(latest.queue[latest.index])
+        if (latest.status !== 'asking' || current === undefined) return
+        // Giving up on a card never tried counts as a miss.
+        if (latest.misses === 0) await record(current.id, false)
+        await update($, practice, s => reveal(s))
+      }
+
+      const next = async () => {
+        const latest = await read($, practice)
+        if (latest.status !== 'correct' && latest.status !== 'revealed') return
+        const advanced = nextCard(latest)
+        if (advanced.status === 'done') {
+          // Finishing the lesson being studied moves the learner on, once.
+          const stored = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+          if (latest.lesson === stored.currentLesson) {
+            await $.store.set(PROGRESS_STORE_KEY, advanceLesson(stored, DEMO_LESSON_COUNT))
+          }
+        }
+        await update($, practice, () => advanced)
+      }
+
+      const askTutor = async () => {
+        const latest = await read($, practice)
+        const current = cardOf(latest.queue[latest.index])
+        if (latest.status !== 'asking' || current === undefined || latest.tutor.kind === 'loading') return
+        await update($, practice, s => ({ ...s, tutor: { kind: 'loading' } }))
+
+        const reply = await $.model.complete({
+          model: 'haiku',
+          system: socratic.instruction({ targetLanguage: setup.targetLanguage, nativeLanguage: setup.nativeLanguage }),
+          prompt: tutorPrompt(current, latest.lastAnswer ?? '(nothing yet)', setup.targetLanguage, setup.nativeLanguage),
+          effort: 'low',
+          maxTokens: 200,
+          timeoutMs: TUTOR_TIMEOUT_MS,
+        })
+
+        // The learner may have moved on while the model thought: drop the reply.
+        const after = await read($, practice)
+        if (after.index !== latest.index || after.status !== 'asking') return
+        if (!reply.isAnswered) {
+          await update($, practice, s => ({ ...s, tutor: { kind: 'unavailable', text: 'The tutor is not available right now. Use the hint above or try again.' } }))
+        } else if (leaksAnswer(reply.text, current.answer)) {
+          await update($, practice, s => ({ ...s, tutor: { kind: 'unavailable', text: 'The tutor reply would have given the answer away, so it was dropped. Try again or look at the hint.' } }))
+        } else {
+          await update($, practice, s => ({ ...s, tutor: { kind: 'answered', text: reply.text.trim() } }))
+        }
+      }
+
+      const finished = isFinished(progress, DEMO_LESSON_COUNT)
+      const isDemoPair = setup.targetLanguage.toLowerCase() === 'english' && setup.nativeLanguage.toLowerCase() === 'spanish'
+      const header = (
         <Box flexDirection="column">
           <Text bold>lingo-pane</Text>
           <Text>
-            Learning {setup.targetLanguage} from {setup.nativeLanguage}, level {setup.level}.
+            Learning {setup.targetLanguage} from {setup.nativeLanguage}, level {setup.level}. /lingo setup changes your choices.
           </Text>
-          <Text dimColor>Skeleton only: lessons are not built yet. /lingo setup changes your choices.</Text>
+          {!isDemoPair && (
+            <Text dimColor>The built-in pack is {DEMO_PACK_TITLE}; it will be used for now.</Text>
+          )}
+        </Box>
+      )
+
+      if (session.lesson === null) {
+        const queue = buildQueue(DEMO_CARDS, progress, new Date(await $.clock.now()))
+        return (
+          <Box flexDirection="column">
+            {header}
+            <Box marginTop={1} flexDirection="column">
+              {finished ? (
+                <Text>Demo finished: all {DEMO_LESSON_COUNT} lessons are done. Come back to review, or wait for the lesson generator.</Text>
+              ) : (
+                <Text>
+                  Lesson {progress.currentLesson} of {DEMO_LESSON_COUNT}: {queue.recall.length} to recall, {queue.fresh.length} new.
+                </Text>
+              )}
+              {!finished && <Button key="start" label="Start lesson" hotkey="s" plain onPress={start} />}
+              <Text dimColor>Tab moves between the field and the buttons; press the key shown.</Text>
+            </Box>
+          </Box>
+        )
+      }
+
+      if (session.status === 'done') {
+        const isLast = session.lesson >= DEMO_LESSON_COUNT
+        return (
+          <Box flexDirection="column">
+            {header}
+            <Box marginTop={1} flexDirection="column">
+              <Text bold color="green">Lesson {session.lesson} done</Text>
+              {isLast && <Text>Demo finished: that was the last lesson.</Text>}
+              <Button key="continue" label="Continue" hotkey="c" plain onPress={() => update($, practice, () => IDLE_PRACTICE)} />
+            </Box>
+          </Box>
+        )
+      }
+
+      const isRecall = session.index < session.recallCount
+      return (
+        <Box flexDirection="column">
+          {header}
+          <Box marginTop={1} flexDirection="column">
+            <Text dimColor>
+              Lesson {session.lesson} - card {session.index + 1} of {session.queue.length} ({isRecall ? 'recall' : 'new'})
+            </Text>
+            <Text bold>{card?.prompt ?? '?'}</Text>
+
+            {session.status === 'asking' && (
+              <Box flexDirection="column">
+                <Input
+                  key={`answer-${session.index}`}
+                  label={`In ${setup.targetLanguage}: `}
+                  placeholder="type your answer"
+                  autoFocus
+                  onSubmit={submit}
+                />
+                {session.hint !== null && <Text color="yellow">Not yet. {session.hint}</Text>}
+                <Box>
+                  <Box marginRight={2}>
+                    <Button key="show-answer" label="Show answer" hotkey="a" plain onPress={showAnswer} />
+                  </Box>
+                  <Button key="tutor" label="Hint from tutor" hotkey="h" plain onPress={askTutor} />
+                </Box>
+                {session.tutor.kind === 'loading' && <Text dimColor>The tutor is thinking...</Text>}
+                {session.tutor.kind === 'answered' && <Text>Tutor: {session.tutor.text}</Text>}
+                {session.tutor.kind === 'unavailable' && <Text dimColor>{session.tutor.text}</Text>}
+              </Box>
+            )}
+
+            {session.status === 'correct' && (
+              <Box flexDirection="column">
+                <Text bold color="green">Correct: {card?.answer}</Text>
+                <Button key="next" label="Next" hotkey="n" plain onPress={next} />
+              </Box>
+            )}
+
+            {session.status === 'revealed' && (
+              <Box flexDirection="column">
+                <Text>Answer: {card?.answer}</Text>
+                <Button key="next" label="Next" hotkey="n" plain onPress={next} />
+              </Box>
+            )}
+          </Box>
         </Box>
       )
     }

@@ -114,6 +114,8 @@ export type LingoPractice = {
   misses: number
   /** The deterministic hint shown after a miss. */
   hint: string | null
+  /** What the learner typed on the last miss (the tutor hint reads it). */
+  lastAnswer: string | null
   tutor: LingoTutorState
 }
 

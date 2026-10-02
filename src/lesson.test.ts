@@ -89,9 +89,9 @@ test('the session walks asking, correct or revealed, next, done', () => {
   const queue = { recall: ['r1'], fresh: ['n1'] }
   let s = startPractice(queue, 2)
   expect(s).toMatchObject({ lesson: 2, queue: ['r1', 'n1'], recallCount: 1, index: 0, status: 'asking' })
-  s = afterAnswer(s, false, 'Hello')
-  expect(s).toMatchObject({ status: 'asking', misses: 1, hint: 'Starts with "H", 1 word, 5 letters.' })
-  s = afterAnswer(s, true, 'Hello')
+  s = afterAnswer(s, false, 'Hello', 'Helo')
+  expect(s).toMatchObject({ status: 'asking', misses: 1, hint: 'Starts with "H", 1 word, 5 letters.', lastAnswer: 'Helo' })
+  s = afterAnswer(s, true, 'Hello', 'Hello')
   expect(s.status).toBe('correct')
   s = nextCard(s)
   expect(s).toMatchObject({ index: 1, status: 'asking', misses: 0, hint: null })

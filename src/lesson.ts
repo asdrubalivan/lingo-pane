@@ -122,6 +122,7 @@ export const IDLE_PRACTICE: LingoPractice = {
   status: 'asking',
   misses: 0,
   hint: null,
+  lastAnswer: null,
   tutor: { kind: 'idle' },
 }
 
@@ -131,9 +132,9 @@ export function startPractice(queue: LessonQueue, lesson: number): LingoPractice
 }
 
 /** After a right or wrong answer: the new state of the card on screen. */
-export function afterAnswer(session: LingoPractice, isCorrect: boolean, answer: string): LingoPractice {
+export function afterAnswer(session: LingoPractice, isCorrect: boolean, answer: string, given: string): LingoPractice {
   if (isCorrect) return { ...session, status: 'correct', hint: null, tutor: { kind: 'idle' } }
-  return { ...session, misses: session.misses + 1, hint: hintFor(answer), tutor: { kind: 'idle' } }
+  return { ...session, misses: session.misses + 1, hint: hintFor(answer), lastAnswer: given, tutor: { kind: 'idle' } }
 }
 
 export const reveal = (session: LingoPractice): LingoPractice => ({ ...session, status: 'revealed', hint: null })
@@ -141,6 +142,6 @@ export const reveal = (session: LingoPractice): LingoPractice => ({ ...session, 
 /** Next card, or `done` after the last one. */
 export function nextCard(session: LingoPractice): LingoPractice {
   const index = session.index + 1
-  if (index >= session.queue.length) return { ...session, index, status: 'done', misses: 0, hint: null, tutor: { kind: 'idle' } }
-  return { ...session, index, status: 'asking', misses: 0, hint: null, tutor: { kind: 'idle' } }
+  if (index >= session.queue.length) return { ...session, index, status: 'done', misses: 0, hint: null, lastAnswer: null, tutor: { kind: 'idle' } }
+  return { ...session, index, status: 'asking', misses: 0, hint: null, lastAnswer: null, tutor: { kind: 'idle' } }
 }
