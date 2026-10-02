@@ -28,7 +28,7 @@ export const SUGGESTED: readonly LingoActivity[] = ['conversation', 'roleplay', 
 export const activityLabel = (activity: LingoActivity): string =>
   ACTIVITIES.find(a => a.id === activity)?.label ?? activity
 
-export const FRESH_LOG: LingoActivityLog = { version: ACTIVITY_LOG_VERSION, units: 0, lastDoneAt: {}, recent: [] }
+export const FRESH_LOG: LingoActivityLog = { version: ACTIVITY_LOG_VERSION, units: 0, lastDoneAt: {}, done: {}, recent: [] }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -46,6 +46,12 @@ export function parseActivityLog(raw: unknown): LingoActivityLog {
       if (isActivity(activity) && typeof at === 'string') lastDoneAt[activity] = at
     }
   }
+  const done: LingoActivityLog['done'] = {}
+  if (isObject(raw.done)) {
+    for (const [activity, count] of Object.entries(raw.done)) {
+      if (isActivity(activity) && isCount(count)) done[activity] = count
+    }
+  }
   const recent = (Array.isArray(raw.recent) ? raw.recent : [])
     .filter(isObject)
     .filter(r => isActivity(r.activity) && typeof r.at === 'string' && isCount(r.sentences) && isCount(r.corrections))
@@ -56,7 +62,7 @@ export function parseActivityLog(raw: unknown): LingoActivityLog {
       corrections: r.corrections as number,
     }))
     .slice(-MAX_RECENT)
-  return { version: ACTIVITY_LOG_VERSION, units: raw.units, lastDoneAt, recent }
+  return { version: ACTIVITY_LOG_VERSION, units: raw.units, lastDoneAt, done, recent }
 }
 
 /** A finished unit: counted, dated, and kept among the recent ones. */
@@ -70,6 +76,7 @@ export function recordUnit(
     ...log,
     units: log.units + 1,
     lastDoneAt: { ...log.lastDoneAt, [activity]: at },
+    done: { ...log.done, [activity]: (log.done[activity] ?? 0) + 1 },
     recent: [...log.recent, { activity, at, ...summary }].slice(-MAX_RECENT),
   }
 }

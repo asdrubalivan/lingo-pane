@@ -73,3 +73,12 @@ test('the Spinner picks one mistake per turn, due ones first', () => {
   expect(['go', 'am from']).toContain(pickForTurn(store, 6, 'turn-9')?.wrong)
   expect(pickForTurn(NO_MISTAKES, 1, 'turn-1')).toBeNull()
 })
+
+test('a reading question shown on an empty Enter is a card too: reviewed, never woven or in the Spinner', () => {
+  const question = { wrong: '', right: 'Madrid', note: 'Ana at home', sentence: 'Where does Ana live?' }
+  const other = { ...question, sentence: 'Where does Ben work?' }
+  const store = addCorrections(NO_MISTAKES, [question, other], 1, 't')
+  expect(store.cards.length).toBe(2)
+  expect(dueMistakes(store, 2).length).toBe(2)
+  expect(pickForTurn(store, 2, 'turn-1')).toBeNull()
+})

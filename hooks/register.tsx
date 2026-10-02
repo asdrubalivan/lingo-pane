@@ -58,7 +58,7 @@ import {
 import type { WaitEvent } from '../src/wait-machine'
 import { canSeatSplit, claudeStateLine, inlineRows, splitColumns } from '../src/split'
 import type { Viewport } from '../src/split'
-import type { LingoActivity, LingoLesson, LingoPractice, LingoSetup, LingoTutorState, LingoUnit } from '../types'
+import type { LingoActivity, LingoLesson, LingoPractice, LingoReading, LingoSetup, LingoTutorState, LingoUnit, LingoUnitSummary } from '../types'
 import {
   ACTIVITIES,
   ACTIVITY_STORE_KEY,
@@ -92,11 +92,21 @@ import {
 } from '../src/tutor'
 import type { TutorContext } from '../src/tutor'
 import { listenUrl } from '../src/listen'
+import { generatedOpeningPrompt, parseScenario, pickScenario } from '../src/roleplay'
+import {
+  READING_MAX_TOKENS,
+  answerReading,
+  parseReading,
+  readingPrompt,
+  readingSystem,
+  showReadingAnswer,
+} from '../src/reading'
 import {
   MAX_WOVEN,
   MISTAKES_STORE_KEY,
   addCorrections,
   dueMistakes,
+  isFormCard,
   mistakeAsCard,
   parseMistakes,
   pickForTurn,
@@ -130,8 +140,8 @@ const lesson = atom({ plugin: 'lingo-pane', key: 'lesson' } as const, IDLE_LESSO
 // The Spinner's micro-card for the turn, worked out once when the turn's delay ends.
 const spinnerCard = atom({ plugin: 'lingo-pane', key: 'spinnerCard' } as const, { turnId: null, text: null })
 
-// What the split offers today; the rest of the menu comes with role-play and reading.
-const AVAILABLE_ACTIVITIES: readonly LingoActivity[] = ['conversation', 'review']
+// What the `switch ▸` menu offers.
+const AVAILABLE_ACTIVITIES: readonly LingoActivity[] = ['conversation', 'roleplay', 'reading', 'review']
 
 // The review's tutor hint (the flashcard practice kept from the first lesson).
 const HINT_TIMEOUT_MS = 20000
@@ -165,27 +175,27 @@ async function focusKey($: EngineInterface, key: string) {
 }
 
 // What the tutor knows about this learner and this unit.
-function tutorContext(setup: LingoSetup, unit: LingoUnit): TutorContext {
+function tutorContext(setup: LingoSetup, unit: LingoUnit | null): TutorContext {
   return {
     targetLanguage: setup.targetLanguage,
     nativeLanguage: setup.nativeLanguage,
     level: setup.level,
     interests: setup.interests,
-    activity: unit.activity,
-    scenario: unit.scenario,
-    weave: unit.woven,
+    activity: unit?.activity ?? 'conversation',
+    scenario: unit?.scenario ?? null,
+    weave: unit?.woven ?? [],
     workContext: null,
   }
 }
 
 // One call on the learner's own plan, with the model chosen in the setup.
-async function callTutor($: EngineInterface, setup: LingoSetup, system: string, prompt: string) {
+async function callTutor($: EngineInterface, setup: LingoSetup, system: string, prompt: string, maxTokens = TUTOR_MAX_TOKENS) {
   return $.model.complete({
     model: setup.tutorModel,
     system,
     prompt,
     effort: 'low',
-    maxTokens: TUTOR_MAX_TOKENS,
+    maxTokens,
     timeoutMs: TUTOR_TIMEOUT_MS,
   })
 }
@@ -195,21 +205,72 @@ async function updateUnit($: EngineInterface, id: string, change: (unit: LingoUn
   await update($, lesson, l => (l.unit === null || l.unit.id !== id ? l : { ...l, unit: change(l.unit) }))
 }
 
-// A new micro-unit of conversation (or role-play): the tutor opens it.
+// A new micro-unit of conversation or role-play: the tutor opens it. A role-play
+// takes the next scenario of the learner's level, or one the tutor makes up from
+// their interests in the same call.
 async function openTalkUnit($: EngineInterface, setup: LingoSetup, activity: LingoUnit['activity']) {
   // The tutor weaves in a couple of the mistakes due at this unit.
   const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
-  const due = dueMistakes(parseMistakes(await $.store.get(MISTAKES_STORE_KEY)), log.units + 1)
+  const due = dueMistakes(parseMistakes(await $.store.get(MISTAKES_STORE_KEY)), log.units + 1).filter(isFormCard)
   const woven = due.slice(0, MAX_WOVEN).map(c => ({ id: c.id, wrong: c.wrong, right: c.right }))
-  const unit = newUnit(`${activity}-${await $.clock.now()}`, activity, null, woven)
+  const pick = activity === 'roleplay' ? pickScenario(setup.level, setup.interests, log.done.roleplay ?? 0) : null
+  const scenario = pick?.kind === 'fixed' ? pick.scenario : null
+  const unit = newUnit(`${activity}-${await $.clock.now()}`, activity, scenario, woven)
   await update($, lesson, l => ({ ...l, activity, unit, isMenuOpen: false }))
   await focusKey($, 'reply')
   const ctx = tutorContext(setup, unit)
-  const reply = await callTutor($, setup, tutorSystem(ctx), openingPrompt(ctx))
+  const isMadeUp = pick?.kind === 'generated'
+  const reply = await callTutor($, setup, tutorSystem(ctx), isMadeUp ? generatedOpeningPrompt(ctx) : openingPrompt(ctx))
   const turn = reply.isAnswered ? parseTutorTurn(reply.text) : null
-  await updateUnit($, unit.id, u =>
-    u.pending !== 'opening' ? u : turn === null ? withoutTutor(u, LABELS.tutorSilentOpening) : withTutorTurn(u, turn),
+  const madeUp = isMadeUp && reply.isAnswered ? parseScenario(reply.text) : null
+  await updateUnit($, unit.id, u => {
+    if (u.pending !== 'opening') return u
+    const opened = turn === null ? withoutTutor(u, LABELS.tutorSilentOpening) : withTutorTurn(u, turn)
+    return madeUp === null ? opened : { ...opened, scenario: madeUp }
+  })
+}
+
+// A reading: the tutor writes a short text at the learner's level and 2-3 questions.
+async function openReading($: EngineInterface, setup: LingoSetup) {
+  const id = `reading-${await $.clock.now()}`
+  const waiting: LingoReading = {
+    id,
+    title: '',
+    text: '',
+    questions: [],
+    index: 0,
+    misses: 0,
+    isPending: true,
+    notice: null,
+    summary: null,
+  }
+  await update($, lesson, (l): LingoLesson => ({ ...l, activity: 'reading', reading: waiting, isMenuOpen: false }))
+  const ctx = tutorContext(setup, null)
+  const reply = await callTutor($, setup, readingSystem(ctx), readingPrompt(ctx), READING_MAX_TOKENS)
+  const written = reply.isAnswered ? parseReading(id, reply.text) : null
+  await update($, lesson, (l): LingoLesson =>
+    l.reading === null || l.reading.id !== id
+      ? l
+      : { ...l, reading: written ?? { ...l.reading, isPending: false, notice: LABELS.readingSilent } },
   )
+  if (written !== null) await focusKey($, 'reading-answer')
+}
+
+// The learner's answer to the question on screen; an empty Enter shows it and makes it a card.
+async function answerQuestion($: EngineInterface, value: string) {
+  const before = (await read($, lesson)).reading
+  const question = before?.questions[before.index]
+  if (before === null || question === undefined || before.summary !== null || before.isPending) return
+  const isShown = value.trim() === ''
+  const after = isShown ? showReadingAnswer(before) : answerReading(before, value)
+  await update($, lesson, (l): LingoLesson => (l.reading?.id === before.id ? { ...l, reading: after } : l))
+  if (isShown) {
+    const unitNumber = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)).units + 1
+    const card = { wrong: '', right: question.answer, note: before.title, sentence: question.question }
+    const mistakes = parseMistakes(await $.store.get(MISTAKES_STORE_KEY))
+    await $.store.set(MISTAKES_STORE_KEY, addCorrections(mistakes, [card], unitNumber, await nowIso($)))
+  }
+  if (after.summary !== null) await finishActivity($, 'reading', after.summary)
 }
 
 // The review: the built-in pack's Pimsleur queue, started at once (zero clicks).
@@ -236,13 +297,14 @@ async function reviewQueue($: EngineInterface): Promise<LessonQueue> {
 }
 
 async function startActivity($: EngineInterface, setup: LingoSetup, activity: LingoActivity) {
+  if (activity === 'review') return startReview($)
+  if (activity === 'reading') return openReading($, setup)
   // A talk unit left half done for another one closes here: its mistakes are kept.
   const left = (await read($, lesson)).unit
-  if (activity !== 'review' && left !== null && left.summary === null) {
+  if (left !== null && left.summary === null) {
     await saveUnitMistakes($, left, parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)).units + 1)
   }
-  if (activity === 'review') return startReview($)
-  if (activity === 'conversation') return openTalkUnit($, setup, activity)
+  return openTalkUnit($, setup, activity)
 }
 
 // The split opens straight into the unfinished activity, or into the suggested one.
@@ -251,6 +313,9 @@ async function ensureLesson($: EngineInterface, setup: LingoSetup) {
   if (current.activity === 'review') {
     const session = await read($, practice)
     if (session.lesson !== null && session.status !== 'done') return
+  } else if (current.activity === 'reading') {
+    const reading = current.reading
+    if (reading !== null && reading.summary === null && !(reading.isPending && reading.text === '')) return
   } else if (current.unit !== null && current.unit.summary === null) {
     // A call lost with a reload leaves the unit waiting forever: give it back.
     if (current.unit.pending !== null && current.unit.lines.length === 0) {
@@ -275,19 +340,27 @@ async function saveUnitMistakes($: EngineInterface, unit: LingoUnit, unitNumber:
   await $.store.set(MISTAKES_STORE_KEY, addCorrections(mistakes, unit.corrections, unitNumber, at))
 }
 
-// A finished unit: logged, its mistakes made cards; with Claude idle, a split in use closes and says how it went.
-async function finishUnit($: EngineInterface, unit: LingoUnit) {
-  if (unit.summary === null) return
-  const log = recordUnit(parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)), unit.activity, unit.summary, await nowIso($))
+// A finished unit of any activity: logged; with Claude idle, a split in use
+// closes and says how it went, else the next activity is one press away.
+async function finishActivity($: EngineInterface, activity: LingoActivity, summary: LingoUnitSummary) {
+  const log = recordUnit(parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)), activity, summary, await nowIso($))
   await $.store.set(ACTIVITY_STORE_KEY, log)
-  await saveUnitMistakes($, unit, log.units)
   const state = await read($, wait)
   if (!isClaudeWorking(state) && isKeptOpen(state)) {
     await closeSplit($)
-    $.ui.toast(`${LABELS.modName}: ${summaryText(unit.summary)}`)
-    return
+    $.ui.toast(`${LABELS.modName}: ${summaryText(summary, activity)}`)
+    return log
   }
   await focusKey($, 'next-unit')
+  return log
+}
+
+// A finished talk unit: its mistakes become cards, numbered by it.
+async function finishUnit($: EngineInterface, unit: LingoUnit) {
+  if (unit.summary === null) return
+  const units = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)).units + 1
+  await saveUnitMistakes($, unit, units)
+  await finishActivity($, unit.activity, unit.summary)
 }
 
 // The learner's line: shown at once, then the tutor's answer.
@@ -923,13 +996,25 @@ export const register: Register = (on, options) => {
         <Text backgroundColor={activityColor} color={theme.bg} bold dimColor={dim}>
           {` ${activityLabel(current.activity)} · ${setup.level} `}
         </Text>
-        {current.unit?.scenario != null && current.activity === 'roleplay' && (
-          <Text color={theme.dim} dimColor={dim}>
-            {current.unit.scenario.title}
+        {current.activity === 'roleplay' && current.unit?.scenario != null && (
+          <Text color={theme.roleplay} dimColor={dim}>
+            {current.unit.scenario.id === null ? LABELS.madeUpScenario(current.unit.scenario.title) : current.unit.scenario.title}
+          </Text>
+        )}
+        {current.activity === 'reading' && current.reading !== null && current.reading.title !== '' && (
+          <Text color={theme.reading} dimColor={dim}>
+            {current.reading.title}
           </Text>
         )}
       </Box>
     )
+    // Where a role-play happens and who plays whom, under the chip.
+    const scene =
+      current.activity === 'roleplay' && current.unit?.scenario != null ? (
+        <Text color={theme.dim} dimColor={dim} wrap="wrap">
+          {LABELS.scene(current.unit.scenario.situation, current.unit.scenario.learnerRole)}
+        </Text>
+      ) : null
 
     const openMenu = async () => {
       await touch($)
@@ -939,7 +1024,13 @@ export const register: Register = (on, options) => {
     const closeMenu = async () => {
       await touch($)
       await update($, lesson, l => ({ ...l, isMenuOpen: false }))
-      await focusKey($, current.activity === 'review' ? `answer-${(await read($, practice)).index}` : 'reply')
+      const field =
+        current.activity === 'review'
+          ? `answer-${(await read($, practice)).index}`
+          : current.activity === 'reading'
+            ? 'reading-answer'
+            : 'reply'
+      await focusKey($, field)
     }
     // An activity left half done is resumed where it was; otherwise it starts.
     const choose = async (activity: LingoActivity) => {
@@ -949,10 +1040,12 @@ export const register: Register = (on, options) => {
       const isRunning =
         activity === 'review'
           ? session.lesson !== null && session.status !== 'done'
-          : latest.unit !== null && latest.unit.activity === activity && latest.unit.summary === null
+          : activity === 'reading'
+            ? latest.reading !== null && latest.reading.summary === null && latest.reading.text !== ''
+            : latest.unit !== null && latest.unit.activity === activity && latest.unit.summary === null
       if (!isRunning) return startActivity($, setup, activity)
       await update($, lesson, (l): LingoLesson => ({ ...l, activity, isMenuOpen: false }))
-      await focusKey($, activity === 'review' ? `answer-${session.index}` : 'reply')
+      await focusKey($, activity === 'review' ? `answer-${session.index}` : activity === 'reading' ? 'reading-answer' : 'reply')
     }
     const switchButton = <Button key="switch" label={LABELS.switchActivity} plain dimColor={dim} onPress={openMenu} />
 
@@ -979,18 +1072,6 @@ export const register: Register = (on, options) => {
       )
     }
 
-    if (current.activity === 'review') {
-      return (
-        <Box flexDirection="column">
-          {top}
-          {chip}
-          {await drawReview()}
-          <Box marginTop={1}>{switchButton}</Box>
-        </Box>
-      )
-    }
-
-    const unit = current.unit
     const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
     const suggested = suggestActivity(log, AVAILABLE_ACTIVITIES)
     const nextButton = (
@@ -1005,6 +1086,104 @@ export const register: Register = (on, options) => {
         }}
       />
     )
+
+    // A reading: the text, then one question at a time. An empty Enter shows the
+    // answer and makes a card of the question.
+    if (current.activity === 'reading') {
+      const reading = current.reading
+      const question = reading?.questions[reading.index]
+      return (
+        <Box flexDirection="column">
+          {top}
+          {chip}
+          {reading === null || reading.isPending ? (
+            <Text color={theme.dim} dimColor={dim}>
+              {LABELS.readingWriting}
+            </Text>
+          ) : (
+            <Box flexDirection="column" marginTop={1}>
+              {reading.text !== '' && (
+                <Text color={theme.fg} dimColor={dim} wrap="wrap">
+                  {reading.text}
+                </Text>
+              )}
+              {reading.text !== '' && (
+                <Text color={theme.dim} dimColor={dim}>
+                  {LABELS.readingGenerated}
+                </Text>
+              )}
+              {reading.questions.slice(0, reading.index).map((q, at) => (
+                <Text key={`answered-${at}`} color={q.outcome === 'right' ? theme.you : theme.err} dimColor={dim}>
+                  {LABELS.readingAnswered(at + 1, q.question, q.answer, q.outcome === 'right')}
+                </Text>
+              ))}
+              {question !== undefined && reading.summary === null && (
+                <Box flexDirection="column" marginTop={1}>
+                  <Text color={theme.fg} bold dimColor={dim}>
+                    {LABELS.readingQuestion(reading.index + 1, reading.questions.length, question.question)}
+                  </Text>
+                  <Box borderStyle="round" borderColor={isFocused ? theme.ring : theme.dim} paddingX={1}>
+                    <Input
+                      key="reading-answer"
+                      placeholder={LABELS.readingPlaceholder}
+                      submitLabel={LABELS.reviewSubmit}
+                      autoFocus
+                      onInput={() => touch($)}
+                      onSubmit={async value => {
+                        await touch($)
+                        await answerQuestion($, value)
+                      }}
+                    />
+                  </Box>
+                  {reading.misses > 0 && (
+                    <Text color={theme.err} dimColor={dim}>
+                      {LABELS.readingNotQuite}
+                    </Text>
+                  )}
+                </Box>
+              )}
+              {reading.notice !== null && (
+                <Text color={theme.err} dimColor={dim}>
+                  {reading.notice}
+                </Text>
+              )}
+              {reading.summary !== null && (
+                <Text color={theme.you} bold dimColor={dim}>
+                  {summaryText(reading.summary, 'reading')}
+                </Text>
+              )}
+            </Box>
+          )}
+          <Box columnGap={2} marginTop={1} flexWrap="wrap">
+            {reading !== null && (reading.summary !== null || (reading.notice !== null && reading.text === '')) && nextButton}
+            {reading !== null && reading.text !== '' && (
+              <Text color={theme.tutor} dimColor={dim}>
+                <Link href={listenUrl(reading.text, setup.targetLanguage, setup.nativeLanguage)}>{LABELS.listen}</Link>
+              </Text>
+            )}
+            {switchButton}
+          </Box>
+          {question !== undefined && reading?.summary === null && (
+            <Text color={theme.dim} dimColor={dim}>
+              {LABELS.readingHint}
+            </Text>
+          )}
+        </Box>
+      )
+    }
+
+    if (current.activity === 'review') {
+      return (
+        <Box flexDirection="column">
+          {top}
+          {chip}
+          {await drawReview()}
+          <Box marginTop={1}>{switchButton}</Box>
+        </Box>
+      )
+    }
+
+    const unit = current.unit
 
     // Nothing in progress (a reset state): the suggested activity, one press away.
     if (unit === null) {
@@ -1030,6 +1209,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column">
         {top}
         {chip}
+        {scene}
         <Box flexDirection="column" marginTop={1}>
           {unit.lines.map((line, index) =>
             line.who === 'tutor' ? (
@@ -1104,7 +1284,7 @@ export const register: Register = (on, options) => {
         ) : (
           <Box flexDirection="column" marginTop={1}>
             <Text color={theme.you} bold dimColor={dim}>
-              {summaryText(unit.summary)}
+              {summaryText(unit.summary, unit.activity)}
             </Text>
             {hint !== null && (
               <Text color={theme.tutor} dimColor={dim}>

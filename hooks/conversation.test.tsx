@@ -164,12 +164,14 @@ test('while Claude works the split stays after a unit: the summary and the next 
   expect(closes).toEqual([])
   expect(await pane.find({ type: 'Text', text: '✓ 3 sentences, 0 corrections saved' })).toBeDefined()
   expect(await pane.find({ key: 'reply' })).toBeUndefined()
+  // The tutor rotates: a role-play comes next.
   const next = await pane.find({ key: 'next-unit' })
-  expect(next?.props).toMatchObject({ label: 'next: conversation ▸', autoFocus: true })
+  expect(next?.props).toMatchObject({ label: 'next: role-play ▸', autoFocus: true })
   // The last reply asked the tutor to close the unit.
   expect(requests.at(-1)?.prompt).toContain('close it warmly')
 
   await pane.press({ key: 'next-unit' })
+  expect(await pane.find({ type: 'Text', text: /role-play · B1/ })).toBeDefined()
   expect(await pane.find({ key: 'reply' })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /✓ 3 sentences/ })).toBeUndefined()
   await pane.unmount()
@@ -229,7 +231,9 @@ test('switch ▸ opens a numbered menu; review starts at once, and the conversat
   // The field is gone while the menu is open, so the digits reach the buttons.
   expect(await pane.find({ key: 'reply' })).toBeUndefined()
   expect((await pane.find({ key: 'switch-conversation' }))?.props).toMatchObject({ hotkey: '1', label: 'conversation (current)' })
-  expect((await pane.find({ key: 'switch-review' }))?.props).toMatchObject({ hotkey: '2' })
+  expect((await pane.find({ key: 'switch-roleplay' }))?.props).toMatchObject({ hotkey: '2', label: 'role-play' })
+  expect((await pane.find({ key: 'switch-reading' }))?.props).toMatchObject({ hotkey: '3' })
+  expect((await pane.find({ key: 'switch-review' }))?.props).toMatchObject({ hotkey: '4' })
 
   await pane.press({ key: 'switch-review' })
   expect(await pane.find({ type: 'Text', text: /review · B1/ })).toBeDefined()

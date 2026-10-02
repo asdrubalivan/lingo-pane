@@ -214,11 +214,37 @@ export type LingoUnit = {
   woven: { id: string; wrong: string; right: string }[]
 }
 
+/** One question about a reading, answered in a word or three. */
+export type LingoReadingQuestion = {
+  question: string
+  answer: string
+  /** Answered right, shown on an empty Enter (and made a card), or still open. */
+  outcome: 'right' | 'shown' | null
+}
+
+/** A reading: a short text the tutor wrote at the learner's level, and 2-3 questions. */
+export type LingoReading = {
+  id: string
+  title: string
+  text: string
+  questions: LingoReadingQuestion[]
+  /** The question on screen. */
+  index: number
+  /** Wrong tries on it. */
+  misses: number
+  /** Waiting for the tutor to write it. */
+  isPending: boolean
+  notice: string | null
+  summary: LingoUnitSummary | null
+}
+
 /** The lesson in the split: the activity on screen and the unit in progress. */
 export type LingoLesson = {
   activity: LingoActivity
   /** Null until the first unit of a conversation or role-play opens. */
   unit: LingoUnit | null
+  /** Null until the first reading. */
+  reading: LingoReading | null
   /** The `switch ▸` menu is open (the field is not drawn meanwhile). */
   isMenuOpen: boolean
 }
@@ -230,6 +256,8 @@ export type LingoActivityLog = {
   units: number
   /** ISO time each activity was last finished. */
   lastDoneAt: Partial<Record<LingoActivity, string>>
+  /** How many units of each activity were finished (role-play scenarios rotate by it). */
+  done: Partial<Record<LingoActivity, number>>
   /** The last 20 finished units, oldest first. */
   recent: { activity: LingoActivity; at: string; sentences: number; corrections: number }[]
 }

@@ -72,6 +72,17 @@ export const LABELS = {
     direction === 'up'
       ? `Tutor: these went smoothly. You could try ${level}; /lingo setup changes it.`
       : `Tutor: these were hard. ${level} might suit you better for now; /lingo setup changes it.`,
+  madeUpScenario: (title: string) => `${title} (made up from your interests)`,
+  scene: (situation: string, learnerRole: string) => `${situation} You: ${learnerRole}`,
+  readingWriting: 'the tutor is writing a short text for you…',
+  readingSilent: 'The tutor did not write the text. Try again with "next" or pick another activity.',
+  readingGenerated: 'Written by the tutor for your level; it can make mistakes.',
+  readingQuestion: (n: number, of: number, question: string) => `Q${n} of ${of}: ${question}`,
+  readingPlaceholder: 'a word or three',
+  readingNotQuite: 'Not quite. Look again, or Enter on the empty field shows it.',
+  readingAnswered: (n: number, question: string, answer: string, isRight: boolean) =>
+    `${isRight ? '✓' : '·'} Q${n} ${question} ${answer}`,
+  readingHint: '⏎ empty = show the answer (it becomes a card) · Tab = listen and switch',
   current: '(current)',
   backToField: 'back',
   menuHint: (count: number) => `press 1-${count} · Tab back`,

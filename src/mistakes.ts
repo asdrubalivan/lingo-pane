@@ -2,7 +2,9 @@
 // made is kept in `$.store` (under `mistakes`), numbered by the unit it came
 // from, so the Pimsleur review brings it back at units n+1, n+3 and n+7. Due
 // cards are woven into the next conversations, shown in the Spinner, and come
-// first in `review`. Pure: no `$`, no I/O; inputs are never mutated.
+// first in `review`. A reading question whose answer was shown is kept the same
+// way, with no wrong words (`wrong` empty): it is reviewed, never woven or shown
+// in the Spinner. Pure: no `$`, no I/O; inputs are never mutated.
 
 import { normalizeAnswer } from './lesson'
 import { pickIndex } from './microcards'
@@ -72,7 +74,8 @@ export function addCorrections(
 ): LingoMistakes {
   let cards = mistakes.cards
   for (const c of corrections) {
-    const id = mistakeId(c.wrong, c.right)
+    // A question card has no wrong words: the question names it.
+    const id = mistakeId(c.wrong === '' ? c.sentence : c.wrong, c.right)
     const before = cards.find(card => card.id === id)
     cards = [
       ...cards.filter(card => card.id !== id),
@@ -118,9 +121,12 @@ export function wovenOutcome(lines: readonly LingoLine[], card: { wrong: string;
 /** The Spinner's line for a mistake. */
 export const spinnerLine = (card: { wrong: string; right: string }): string => `${card.wrong} → ${card.right}`
 
+/** Cards from a wrong form (not reading questions): the ones to weave and to show in the Spinner. */
+export const isFormCard = (card: LingoMistakeCard): boolean => card.wrong !== ''
+
 /** The mistake the Spinner shows this turn: a due one if any, else one of the latest; null with none. */
 export function pickForTurn(mistakes: LingoMistakes, currentUnit: number, turnId: string): LingoMistakeCard | null {
-  const due = dueMistakes(mistakes, currentUnit)
-  const pool = due.length > 0 ? due : mistakes.cards.slice(-20)
+  const due = dueMistakes(mistakes, currentUnit).filter(isFormCard)
+  const pool = due.length > 0 ? due : mistakes.cards.filter(isFormCard).slice(-20)
   return pool[pickIndex(turnId, pool.length)] ?? null
 }

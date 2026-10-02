@@ -3,7 +3,7 @@
 // one), and after a few replies the unit closes with a summary. No `$`, no I/O;
 // inputs are never mutated. hooks/register.tsx makes the model calls.
 
-import type { LingoCorrection, LingoLesson, LingoScenario, LingoUnit, LingoUnitSummary } from '../types'
+import type { LingoActivity, LingoCorrection, LingoLesson, LingoScenario, LingoUnit, LingoUnitSummary } from '../types'
 
 /** Learner replies per micro-unit (the design says 2-4 exchanges). */
 export const UNIT_REPLIES = 3
@@ -12,7 +12,7 @@ export const MAX_REPLY_LENGTH = 400
 /** Lines a tutor reply may add to the screen. */
 export const MAX_TUTOR_LENGTH = 600
 
-export const IDLE_LESSON: LingoLesson = { activity: 'conversation', unit: null, isMenuOpen: false }
+export const IDLE_LESSON: LingoLesson = { activity: 'conversation', unit: null, reading: null, isMenuOpen: false }
 
 export function newUnit(
   id: string,
@@ -101,10 +101,12 @@ export function summarize(unit: LingoUnit): LingoUnitSummary {
   return { sentences: unit.replies, corrections: unit.corrections.length }
 }
 
-/** `✓ 3 sentences, 1 correction saved`. */
-export function summaryText(summary: LingoUnitSummary): string {
+/** `✓ 3 sentences, 1 correction saved`; a reading counts questions and cards. */
+export function summaryText(summary: LingoUnitSummary, activity: LingoActivity = 'conversation'): string {
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
-  return `✓ ${plural(summary.sentences, 'sentence')}, ${plural(summary.corrections, 'correction')} saved`
+  return activity === 'reading'
+    ? `✓ ${plural(summary.sentences, 'question')}, ${plural(summary.corrections, 'card')} saved`
+    : `✓ ${plural(summary.sentences, 'sentence')}, ${plural(summary.corrections, 'correction')} saved`
 }
 
 /**

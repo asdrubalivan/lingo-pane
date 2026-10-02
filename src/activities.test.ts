@@ -36,6 +36,7 @@ test('a finished unit is counted, dated and kept among the last 20', () => {
   let log: LingoActivityLog = FRESH_LOG
   for (let i = 0; i < 25; i += 1) log = recordUnit(log, 'conversation', { sentences: 3, corrections: i % 2 }, `t${i}`)
   expect(log.units).toBe(25)
+  expect(log.done).toEqual({ conversation: 25 })
   expect(log.recent.length).toBe(20)
   expect(log.recent[0]?.at).toBe('t5')
   expect(log.lastDoneAt.conversation).toBe('t24')
@@ -44,6 +45,8 @@ test('a finished unit is counted, dated and kept among the last 20', () => {
 test('the stored log is validated; anything else is a fresh one', () => {
   const log = recordUnit(FRESH_LOG, 'roleplay', { sentences: 2, corrections: 1 }, 'now')
   expect(parseActivityLog(JSON.parse(JSON.stringify(log)))).toEqual(log)
+  // A log saved before `done` existed reads with none counted.
+  expect(parseActivityLog({ version: 1, units: 2, lastDoneAt: {}, recent: [] }).done).toEqual({})
   for (const bad of [undefined, null, 'x', { version: 2, units: 1 }, { version: 1, units: -1 }]) {
     expect(parseActivityLog(bad)).toEqual(FRESH_LOG)
   }
