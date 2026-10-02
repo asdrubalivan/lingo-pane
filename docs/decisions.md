@@ -61,6 +61,14 @@ Added by the author on 2026-10-02 ("important"): the mod must have a mode that *
 - This makes recording history a core feature, not an extra: the activity log and `$.store` progress must be rich enough to drive generation.
 - Risk to design for: a model can produce wrong grammar or vocabulary. Generated material has to be marked as generated, stay inside the learner's level and known vocabulary, and the tutor should say when it is not sure.
 
+## Setup
+
+Decided 2026-10-02: the mod has a guided setup.
+
+- **Covers:** native language, target language and level; choosing the strategy for each axis (defaults: socratic correction, Pimsleur review, local JSON store and log); where the learner's material and activity log live (creating the initial structure if missing). An **optional** placement test with the tutor calibrates the level and seeds the history that feeds generated lessons.
+- **When:** opens automatically the first time `/lingo` runs with no configuration, and again on demand with `/lingo setup`.
+- **Where:** a stepped wizard in the `/lingo` pane with Inputs and Buttons. Only the optional placement test uses the model.
+
 ## Waiting-state trigger (learned from the Doom mod)
 
 Study of `jarrodwatts/intermission` (a mod that shows a multiplayer Doom pane while Claude is busy), 2026-10-02. What we reuse; we do **not** reuse its native engine, shared memory, images or downloaded binary.
@@ -75,7 +83,7 @@ Build order: the trigger (this section) first, then strategies plug into it.
 ## Still open
 
 - Lesson generator: how generated lessons are persisted and validated.
-- Setup: the author wants a setup step too; shape under discussion (see below once decided).
+- Setup: exact steps and how choices are stored (`$.store` vs `userConfig`).
 - Exact shape of the four strategy interfaces.
 - Audio: system voice only, or bundled assets.
 - Data model of a lesson/exercise and of progress in `$.store`.
