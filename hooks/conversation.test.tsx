@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 // The conversation in micro-units: the split opens straight into it (zero
 // clicks), the tutor opens, the learner replies, a mistake is pointed at (the
@@ -15,7 +16,7 @@ const SAVED = {
 }
 
 const WIDE = { columns: 200, rows: 50, isFullscreen: true }
-const USAGE = { input_tokens: 1, output_tokens: 1 }
+const USAGE = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
 
 const PANE = (isFocused: boolean) =>
   ({
@@ -71,7 +72,7 @@ const world = (on: On, options: { setup?: Record<string, unknown>; store?: Recor
   return { entries, requests, script, opens, closes, toasts }
 }
 
-type Dollar = Parameters<Parameters<typeof test>[1]>[0]
+type Dollar = Engine
 
 // The person types /lingo: the split opens and the tutor opens the unit.
 const openWithCommand = ($: Dollar) =>

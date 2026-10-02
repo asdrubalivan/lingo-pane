@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 const SAVED = {
   version: 1,
@@ -32,6 +33,10 @@ const SPINNER = { word: 'Sauteing', message: null, suffix: '…', mode: 'request
 
 type On = Parameters<typeof mock.store>[0]
 
+// /lingo as the person types it: the engine stamps where it came from and where it shows.
+const runLingo = ($: Engine, args: string) =>
+  $.command.run({ command: 'lingo', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
+
 // A store in memory the test can also read and write (the test's `$` has no
 // `$.store`), as the engine keeps it: JSON in, JSON out.
 const memoryStore = (on: On, initial: Record<string, unknown> = {}) => {
@@ -63,10 +68,10 @@ const engineBeneath = (on: On, options: { opensItself?: boolean } = {}) => {
       return { value: { isPlaced: true } }
     })
   }
-  on('command.register', () => ({ value: undefined }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
   // The tutor, beneath the plugin: confirming the setup opens the first unit.
   on('model.complete', () => ({
-    value: { isAnswered: true as const, text: 'FIX: none\nTUTOR: Hi! How are you today?', usage: { input_tokens: 1, output_tokens: 1 } },
+    value: { isAnswered: true as const, text: 'FIX: none\nTUTOR: Hi! How are you today?', usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } },
   }))
   on('ui.render', { component: 'AbovePrompt' }, (_$, e) => {
     const { Box } = _$.ui.resolve(e)
@@ -382,22 +387,22 @@ test('/lingo subcommands: unknown lists the real ones, setup opens the wizard, a
     return { value: { isPlaced: true } }
   })
 
-  const unknown = await $.command.run({ command: 'lingo', args: 'frobnicate' })
+  const unknown = await runLingo($, 'frobnicate')
   expect(unknown.text).toMatch(/unknown subcommand "frobnicate"/)
   expect(unknown.text).toContain('/lingo setup')
   expect(opens.length).toBe(0)
 
-  // Plain /lingo opens it asking for the keyboard (the practice has a field and hotkeys), the second closes it.
-  await $.command.run({ command: 'lingo', args: '' })
-  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true }])
-  await $.command.run({ command: 'lingo', args: '' })
+  // Plain /lingo opens it asking for the keyboard and 40 % of the 100 columns the command reports; the second closes it.
+  await runLingo($, '')
+  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true, columns: 40 }])
+  await runLingo($, '')
   expect(closes).toEqual(['lingo'])
 
   // setup always opens the wizard, even over an open pane, and asks for the keyboard.
   paneUp = true
-  await $.command.run({ command: 'lingo', args: 'setup' })
+  await runLingo($, 'setup')
   expect(closes).toEqual(['lingo'])
-  expect(opens.at(-1)).toEqual({ id: 'lingo', title: 'lingo-pane', focus: true })
+  expect(opens.at(-1)).toEqual({ id: 'lingo', title: 'lingo-pane', focus: true, columns: 40 })
 
   // The wizard is up, prefilled from what is saved.
   const pane = await $.ui.mount({
@@ -417,24 +422,24 @@ test('a pending setup makes plain /lingo ask for the keyboard so the wizard can 
   memoryStore(on)
   const { opens } = engineBeneath(on)
   on('ui.panes', () => ({ value: [] }))
-  await $.command.run({ command: 'lingo', args: '' })
-  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true }])
+  await runLingo($, '')
+  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true, columns: 40 }])
 })
 
 test('/lingo theme switches the saved theme in the store; bad names and a pending setup are answered', async ($, on) => {
   const entries = memoryStore(on)
   engineBeneath(on)
 
-  expect((await $.command.run({ command: 'lingo', args: 'theme pastel' })).text).toMatch(/finish the setup first/)
+  expect((await runLingo($, 'theme pastel')).text).toMatch(/finish the setup first/)
   expect(entries.get('setup')).toBeUndefined()
 
   entries.set('setup', SAVED)
-  const set = await $.command.run({ command: 'lingo', args: 'theme Trópico' })
+  const set = await runLingo($, 'theme Trópico')
   expect(set.text).toBe('lingo-pane: theme set to Trópico.')
   // The rest of the setup is kept; the defaults of a setup saved before themes are filled in.
   expect(entries.get('setup')).toMatchObject({ ...SAVED, theme: 'tropico', splitShare: 40, tutorModel: 'sonnet' })
 
-  expect((await $.command.run({ command: 'lingo', args: 'theme neon' })).text).toMatch(/no theme "neon"/)
-  expect((await $.command.run({ command: 'lingo', args: 'theme' })).text).toMatch(/name a theme/)
+  expect((await runLingo($, 'theme neon')).text).toMatch(/no theme "neon"/)
+  expect((await runLingo($, 'theme')).text).toMatch(/name a theme/)
   expect(entries.get('setup')).toMatchObject({ theme: 'tropico' })
 })

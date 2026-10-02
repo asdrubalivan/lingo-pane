@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 // Role-play (the fixed A1-C2 list, and scenarios the tutor makes up from the
 // learner's interests) and reading (a short text and 2-3 questions; an empty
@@ -14,7 +15,7 @@ const SAVED = {
 }
 
 const WIDE = { columns: 200, rows: 50, isFullscreen: true }
-const USAGE = { input_tokens: 1, output_tokens: 1 }
+const USAGE = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
 const PANE = { title: 'lingo-pane', isFocused: true, bodyColumns: 78, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } as const
 
 // The log after one conversation: the tutor suggests a role-play next.
@@ -29,7 +30,7 @@ const READING = [
 ].join('\n')
 
 type On = Parameters<typeof mock.store>[0]
-type Dollar = Parameters<Parameters<typeof test>[1]>[0]
+type Dollar = Engine
 type Request = { system?: string; prompt: string; maxTokens?: number }
 
 const world = (on: On, options: { setup?: Record<string, unknown>; store?: Record<string, unknown> } = {}) => {

@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 // The contextual mode is opt-in: off, nothing of the learner's own session is
 // kept or sent; on, a short, redacted excerpt of their last prompt and of
@@ -13,11 +14,11 @@ const SAVED = {
   completedAt: '2026-10-02T10:00:00.000Z',
 }
 
-const USAGE = { input_tokens: 1, output_tokens: 1 }
+const USAGE = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
 const PANE = { title: 'lingo-pane', isFocused: true, bodyColumns: 78, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } as const
 
 type On = Parameters<typeof mock.store>[0]
-type Dollar = Parameters<Parameters<typeof test>[1]>[0]
+type Dollar = Engine
 
 const world = (on: On, setup: Record<string, unknown>) => {
   const entries = new Map<string, unknown>(Object.entries({ setup }))
@@ -36,7 +37,7 @@ const world = (on: On, setup: Record<string, unknown>) => {
   on('ui.panes', () => ({ value: [] }))
   on('ui.toast', () => ({ value: undefined }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
-  on('command.register', () => ({ value: undefined }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))

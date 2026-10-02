@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 // The docked split: opens by itself 2 s into a turn (fullscreen, wide enough),
 // asks for the keyboard and its share of the width, and closes by the rules in
@@ -38,7 +39,7 @@ const PANE = (isFocused: boolean) =>
   }) as const
 
 type On = Parameters<typeof mock.store>[0]
-type Dollar = Parameters<Parameters<typeof test>[1]>[0]
+type Dollar = Engine
 
 // The engine beneath the plugin: panes that open (placed or not), close and list.
 const engine = (on: On, options: { isPlaced?: boolean; setup?: unknown } = {}) => {
@@ -62,7 +63,7 @@ const engine = (on: On, options: { isPlaced?: boolean; setup?: unknown } = {}) =
   }))
   on('command.register', (_$, e) => {
     registered.push({ ...e })
-    return { value: undefined }
+    return { value: { command: e.name } }
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
@@ -71,7 +72,7 @@ const engine = (on: On, options: { isPlaced?: boolean; setup?: unknown } = {}) =
   on('tool.check', () => ({ decision: 'ask' }))
   // The tutor, beneath the plugin: the split opens straight into a conversation.
   on('model.complete', () => ({
-    value: { isAnswered: true as const, text: 'FIX: none\nTUTOR: Hello! What are you working on?', usage: { input_tokens: 1, output_tokens: 1 } },
+    value: { isAnswered: true as const, text: 'FIX: none\nTUTOR: Hello! What are you working on?', usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } },
   }))
   on('tool.call', () => ({ ref: 0, result: {}, text: '' }))
   on('ui.render', { component: 'AbovePrompt' }, (_$, e) => {

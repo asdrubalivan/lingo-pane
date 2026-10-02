@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 import { DEMO_CARDS } from '../src/content/demo-english-a1'
+import type { Card } from '../src/strategies'
 
 const SAVED = {
   version: 1,
@@ -32,7 +34,7 @@ const memoryStore = (on: On, initial: Record<string, unknown>) => {
   return entries
 }
 
-const mountPane = ($: Parameters<Parameters<typeof test>[1]>[0], surface: 'terminal' | 'desktop') =>
+const mountPane = ($: Engine, surface: 'terminal' | 'desktop') =>
   $.ui.mount({
     plugin: 'lingo-pane',
     surface,
@@ -42,7 +44,7 @@ const mountPane = ($: Parameters<Parameters<typeof test>[1]>[0], surface: 'termi
     props: PANE_PROPS,
   })
 
-const USAGE = { input_tokens: 1, output_tokens: 1 }
+const USAGE = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
 
 // The flashcard practice is the `review` activity now: reached through `switch ▸`,
 // and started at once (zero clicks).
@@ -56,7 +58,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
     const entries = memoryStore(on, { setup: SAVED })
     const pane = await mountPane($, surface)
-    const [first, second] = DEMO_CARDS.filter(c => c.lesson === 1)
+    const [first, second] = DEMO_CARDS.filter(c => c.lesson === 1) as [Card, Card]
 
     await toReview(pane)
     expect(await pane.find({ type: 'Text', text: first.prompt })).toBeDefined()
@@ -82,8 +84,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const progress = entries.get('progress') as { currentLesson: number; cards: Record<string, { reviews: { isCorrect: boolean }[] }> }
     expect(progress.currentLesson).toBe(1)
-    expect(progress.cards[first.id].reviews.map(r => r.isCorrect)).toEqual([false, true])
-    expect(progress.cards[second.id].reviews.map(r => r.isCorrect)).toEqual([false])
+    expect(progress.cards[first.id]?.reviews.map(r => r.isCorrect)).toEqual([false, true])
+    expect(progress.cards[second.id]?.reviews.map(r => r.isCorrect)).toEqual([false])
     await pane.unmount()
   })
 }
@@ -127,7 +129,7 @@ test('corrupt progress starts at lesson 1', async ($, on) => {
 test('the tutor hint sends a capped low-effort request and never shows the answer', async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   memoryStore(on, { setup: SAVED })
-  const [first] = DEMO_CARDS.filter(c => c.lesson === 1)
+  const [first] = DEMO_CARDS.filter(c => c.lesson === 1) as [Card]
   const requests: { system?: string; prompt: string; effort?: string; maxTokens?: number; timeoutMs?: number }[] = []
   let reply = { isAnswered: true as const, text: 'Piensa en cómo saludas al llegar.', usage: USAGE }
   on('model.complete', (_$, e) => {
@@ -141,10 +143,10 @@ test('the tutor hint sends a capped low-effort request and never shows the answe
   await pane.press({ key: 'tutor' })
   expect(requests.length).toBe(1)
   expect(requests[0]).toMatchObject({ effort: 'low', maxTokens: 200 })
-  expect(requests[0].timeoutMs).toBeGreaterThan(0)
-  expect(requests[0].system).toMatch(/tutor/)
-  expect(requests[0].prompt).toContain(first.prompt)
-  expect(requests[0].prompt).toContain('"bye"')
+  expect(requests[0]?.timeoutMs).toBeGreaterThan(0)
+  expect(requests[0]?.system).toMatch(/tutor/)
+  expect(requests[0]?.prompt).toContain(first.prompt)
+  expect(requests[0]?.prompt).toContain('"bye"')
   expect(await pane.find({ type: 'Text', text: /tutor +Piensa en cómo saludas/ })).toBeDefined()
 
   // A reply that leaks the answer is dropped.
@@ -159,7 +161,7 @@ test('a tutor that does not answer shows a short message and the lesson goes on'
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   memoryStore(on, { setup: SAVED })
   on('model.complete', () => ({ value: { isAnswered: false, reason: 'aborted', usage: USAGE } }))
-  const [first] = DEMO_CARDS.filter(c => c.lesson === 1)
+  const [first] = DEMO_CARDS.filter(c => c.lesson === 1) as [Card]
 
   const pane = await mountPane($, 'terminal')
   await toReview(pane)

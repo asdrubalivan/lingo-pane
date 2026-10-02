@@ -12,7 +12,7 @@ test('there are 61 scenarios: 10, 10, 11, 11, 10 and 9 from A1 to C2, in level o
     expect(ROLEPLAY_SCENARIOS.filter(s => s.level === level).length).toBe(EXPECTED_COUNTS[level])
   }
   const ranks = ROLEPLAY_SCENARIOS.map(s => LEVEL_ORDER.indexOf(s.level))
-  expect(ranks.every((rank, i) => rank >= 0 && (i === 0 || rank >= ranks[i - 1]))).toBe(true)
+  expect(ranks.every((rank, i) => rank >= 0 && (i === 0 || rank >= (ranks[i - 1] ?? 0)))).toBe(true)
 })
 
 test('ids are unique and kebab-case', () => {

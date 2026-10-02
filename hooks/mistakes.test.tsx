@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 // Mistakes become cards: kept when a unit closes (numbered by the unit), woven
 // into the conversations where they fall due (Pimsleur by unit), carried by the
@@ -14,7 +15,7 @@ const SAVED = {
 }
 
 const WIDE = { columns: 200, rows: 50, isFullscreen: true }
-const USAGE = { input_tokens: 1, output_tokens: 1 }
+const USAGE = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
 const PANE = { title: 'lingo-pane', isFocused: true, bodyColumns: 78, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } as const
 const SPINNER = { word: 'Sauteing', message: null, suffix: '…', mode: 'requesting' } as const
 
@@ -35,7 +36,7 @@ const ONE_UNIT_DONE = {
 }
 
 type On = Parameters<typeof mock.store>[0]
-type Dollar = Parameters<Parameters<typeof test>[1]>[0]
+type Dollar = Engine
 type Request = { system?: string; prompt: string }
 
 const world = (on: On, store: Record<string, unknown> = {}) => {
