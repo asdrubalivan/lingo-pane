@@ -14,6 +14,13 @@
       "title": "Native language",
       "description": "The language explanations are written in.",
       "default": "Spanish"
+    },
+    "openPaneWhileWaiting": {
+      "type": "boolean",
+      "title": "Open the lesson pane while Claude works",
+      "description": "Off by default: only a one-line micro-lesson shows in the spinner. When on, the mod also tries to open the lesson pane after a short wait (it needs a wide terminal, otherwise a button offers it).",
+      "default": false
     }
-  }
+  },
+  "types": "./types/index.d.ts"
 }
