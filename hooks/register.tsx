@@ -384,6 +384,11 @@ export const register: Register = (on, options) => {
           }
         }
         await update($, practice, () => advanced)
+        // The button that was pressed holds the ring: hand it to the new field.
+        if (advanced.status === 'asking') {
+          // Never worth failing the press over (a pane drawn without the keyboard denies it).
+          await $.ui.focus({ requestId: PANE, key: `answer-${advanced.index}` }).catch(() => undefined)
+        }
       }
 
       const askTutor = async () => {
@@ -475,7 +480,7 @@ export const register: Register = (on, options) => {
               <Box flexDirection="column">
                 <Input
                   key={`answer-${session.index}`}
-                  label={`In ${setup.targetLanguage}: `}
+                  label={`In ${setup.targetLanguage}`}
                   placeholder="type your answer"
                   autoFocus
                   onSubmit={submit}
