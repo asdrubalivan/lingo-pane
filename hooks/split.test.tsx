@@ -69,6 +69,10 @@ const engine = (on: On, options: { isPlaced?: boolean; setup?: unknown } = {}) =
   on('turn.complete', () => ({ text: '' }))
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('tool.check', () => ({ decision: 'ask' }))
+  // The tutor, beneath the plugin: the split opens straight into a conversation.
+  on('model.complete', () => ({
+    value: { isAnswered: true as const, text: 'FIX: none\nTUTOR: Hello! What are you working on?', usage: { input_tokens: 1, output_tokens: 1 } },
+  }))
   on('tool.call', () => ({ ref: 0, result: {}, text: '' }))
   on('ui.render', { component: 'AbovePrompt' }, (_$, e) => {
     const { Box } = _$.ui.resolve(e)
@@ -135,9 +139,10 @@ test('touched, it stays after the turn and closes when the learner submits the n
 
   await $.turn.start({ text: 'go', turnId: 't1' })
   await clock.advance(2000)
-  // Getting the focus is not touching: drawing it focused changes nothing.
+  // Getting the focus is not touching: drawing it focused changes nothing. A key typed in its field is.
   const pane = await mountPane($)
-  await pane.press({ key: 'start' })
+  expect(await pane.find({ key: 'reply' })).toBeDefined()
+  await pane.input({ key: 'reply', text: 'I', kind: 'change' })
   await $.turn.complete(complete('t1'))
   await clock.advance(5000)
   expect(closes).toEqual([])
@@ -255,17 +260,16 @@ test('a permission ask dims the split and takes its field away; it stays open an
   await $.turn.start({ text: 'go', turnId: 't1' })
   await clock.advance(2000)
   const pane = await mountPane($)
-  await pane.press({ key: 'start' })
-  expect(await pane.find({ key: 'answer-0' })).toBeDefined()
+  expect(await pane.find({ key: 'reply' })).toBeDefined()
 
   await $.tool.check({ tool: 'Bash', input: { command: 'rm x' }, tool_use_id: 'call-1' } as never)
   await pane.redraw()
   expect(await pane.find({ type: 'Text', text: /Claude needs you/ })).toBeDefined()
-  expect(await pane.find({ key: 'answer-0' })).toBeUndefined()
+  expect(await pane.find({ key: 'reply' })).toBeUndefined()
   expect(closes).toEqual([])
 
   await $.tool.call({ tool: 'Bash', command: 'rm x' })
   await pane.redraw()
-  expect(await pane.find({ key: 'answer-0' })).toBeDefined()
+  expect(await pane.find({ key: 'reply' })).toBeDefined()
   await pane.unmount()
 })

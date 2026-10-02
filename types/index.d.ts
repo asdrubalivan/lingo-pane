@@ -156,6 +156,84 @@ export type LingoPractice = {
   tutor: LingoTutorState
 }
 
+/** What the split teaches; `review` is in the menu but the tutor never suggests it. */
+export type LingoActivity = 'conversation' | 'roleplay' | 'reading' | 'review'
+
+/** One line of a micro-unit, as drawn. */
+export type LingoLine =
+  /** `mark`: the learner's words the tutor points at, drawn in the error color. */
+  | { who: 'tutor'; text: string; mark: string | null }
+  | { who: 'you'; text: string }
+  /** The scaffold an empty Enter asked for. */
+  | { who: 'help'; text: string }
+
+/** A mistake the tutor spotted; it becomes a card when its unit closes. */
+export type LingoCorrection = {
+  /** The learner's words, as short as the tutor could make them. */
+  wrong: string
+  right: string
+  /** Why, in a few words of the native language. */
+  note: string
+  /** The learner's whole line. */
+  sentence: string
+}
+
+/** What the split is waiting on the tutor for. */
+export type LingoPending = 'opening' | 'reply' | 'help'
+
+/** How a micro-unit went: `✓ 3 sentences, 1 correction saved`. */
+export type LingoUnitSummary = { sentences: number; corrections: number }
+
+/** A role-play's setting: from the fixed A1-C2 list (`id`) or made up from the learner's interests (`id` null). */
+export type LingoScenario = {
+  id: string | null
+  title: string
+  situation: string
+  tutorRole: string
+  learnerRole: string
+}
+
+/** A micro-unit of conversation or role-play: 2-4 exchanges, then a summary. */
+export type LingoUnit = {
+  /** Tells this unit from the next one, so a late tutor reply never lands in another. */
+  id: string
+  activity: 'conversation' | 'roleplay'
+  /** Oldest first; the tutor opens. */
+  lines: LingoLine[]
+  /** Replies the learner has sent. */
+  replies: number
+  corrections: LingoCorrection[]
+  pending: LingoPending | null
+  /** A short message when the tutor could not answer. */
+  notice: string | null
+  /** Set once the unit is over. */
+  summary: LingoUnitSummary | null
+  /** Role-play only. */
+  scenario: LingoScenario | null
+  /** Ids of the due cards the tutor was asked to weave in. */
+  woven: string[]
+}
+
+/** The lesson in the split: the activity on screen and the unit in progress. */
+export type LingoLesson = {
+  activity: LingoActivity
+  /** Null until the first unit of a conversation or role-play opens. */
+  unit: LingoUnit | null
+  /** The `switch ▸` menu is open (the field is not drawn meanwhile). */
+  isMenuOpen: boolean
+}
+
+/** What the mod saves in `$.store` under `activity`: what was done, to rotate activities and number cards. */
+export type LingoActivityLog = {
+  version: 1
+  /** Finished micro-units so far; a mistake card is numbered by the unit it came from. */
+  units: number
+  /** ISO time each activity was last finished. */
+  lastDoneAt: Partial<Record<LingoActivity, string>>
+  /** The last 20 finished units, oldest first. */
+  recent: { activity: LingoActivity; at: string; sentences: number; corrections: number }[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'lingo-pane': {
@@ -164,6 +242,7 @@ declare module 'claude-code' {
       setupCache: LingoSetupCache
       setupBand: LingoSetupBand
       practice: LingoPractice
+      lesson: LingoLesson
     }
   }
 }

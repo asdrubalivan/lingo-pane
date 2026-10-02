@@ -64,6 +64,10 @@ const engineBeneath = (on: On, options: { opensItself?: boolean } = {}) => {
     })
   }
   on('command.register', () => ({ value: undefined }))
+  // The tutor, beneath the plugin: confirming the setup opens the first unit.
+  on('model.complete', () => ({
+    value: { isAnswered: true as const, text: 'FIX: none\nTUTOR: Hi! How are you today?', usage: { input_tokens: 1, output_tokens: 1 } },
+  }))
   on('ui.render', { component: 'AbovePrompt' }, (_$, e) => {
     const { Box } = _$.ui.resolve(e)
     return <Box />
@@ -164,8 +168,10 @@ test(`the setup pane walks the wizard on ${surface} and saves the choices in the
     })
     expect(toasts.at(-1)).toMatch(/setup saved/)
 
-    // Done: the pane greets, and the band is gone without anything else changing.
-    expect(await pane.find({ type: 'Text', text: /Learning Ukrainian from Spanish, level B1/ })).toBeDefined()
+    // Done: straight into the first conversation, and the band is gone.
+    expect(await pane.find({ type: 'Text', text: /conversation · B1/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /Hi! How are you today\?/ })).toBeDefined()
+    expect(await pane.find({ key: 'reply' })).toBeDefined()
     expect(await band.find({ key: 'setup-start' })).toBeUndefined()
     await pane.unmount()
     await band.unmount()
@@ -357,6 +363,7 @@ test('after /clear the pending setup is announced again, from the store', async 
 })
 
 test('/lingo subcommands: unknown lists the real ones, setup opens the wizard, a second /lingo closes the pane', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   memoryStore(on, { setup: SAVED })
   const { opens } = engineBeneath(on, { opensItself: true })
   let paneUp = false

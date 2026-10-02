@@ -53,6 +53,51 @@ export const LABELS = {
   keysAway: '○ Ctrl+X Tab to come back',
   waitingForYou: 'Claude needs you: answer below. The lesson waits here.',
 
+  // --- The lesson ----------------------------------------------------------------
+  tutor: 'tutor  ',
+  you: 'you    ',
+  help: 'help   ',
+  tutorThinking: 'the tutor is thinking…',
+  tutorSilentOpening: 'The tutor did not answer. Press "switch ▸" to try again or pick another activity.',
+  tutorSilentReply: 'The tutor did not answer; your line is back to you: send it again.',
+  tutorSilentHelp: 'The tutor did not answer. Try Enter on the empty field again.',
+  replyPlaceholder: (target: string) => `reply in ${target}`,
+  replySubmit: 'reply',
+  listen: '🔊 listen',
+  switchActivity: 'switch ▸',
+  talkHint: '⏎ empty = help · Tab = listen and switch',
+  talkHintWaiting: 'the tutor is answering; send your next line once it has',
+  nextActivity: (label: string) => `next: ${label} ▸`,
+  levelHint: (direction: 'up' | 'down', level: string) =>
+    direction === 'up'
+      ? `Tutor: these went smoothly. You could try ${level}; /lingo setup changes it.`
+      : `Tutor: these were hard. ${level} might suit you better for now; /lingo setup changes it.`,
+  current: '(current)',
+  backToField: 'back',
+  menuHint: (count: number) => `press 1-${count} · Tab back`,
+
+  // --- Review (the built-in pack) ---------------------------------------------------
+  reviewPackNote: (title: string) => `The built-in pack is ${title}; it is used for now.`,
+  reviewDemoFinished: (count: number) => `Demo finished: all ${count} lessons are done. Come back to review, or wait for the lesson generator.`,
+  reviewLessonIntro: (lesson: number, count: number, recall: number, fresh: number) =>
+    `Lesson ${lesson} of ${count}: ${recall} to recall, ${fresh} new.`,
+  reviewStart: 'Start lesson',
+  reviewLessonDone: (lesson: number) => `Lesson ${lesson} done`,
+  reviewDemoLast: 'Demo finished: that was the last lesson.',
+  reviewContinue: 'Continue',
+  reviewCardOf: (lesson: number, card: number, of: number, isRecall: boolean) =>
+    `Lesson ${lesson} - card ${card} of ${of} (${isRecall ? 'recall' : 'new'})`,
+  reviewIn: (target: string) => `In ${target}: `,
+  reviewPlaceholder: 'type your answer',
+  reviewSubmit: 'answer',
+  reviewNotYet: (hint: string) => `Not yet. ${hint}`,
+  reviewHintFromTutor: 'Hint from tutor',
+  reviewHint: '⏎ empty = show the answer · Tab = hint from tutor, switch',
+  reviewCorrect: (answer: string) => `Correct: ${answer}`,
+  reviewAnswer: (answer: string) => `Answer: ${answer}`,
+  hintUnavailable: 'The tutor is not available right now. Use the hint above or try again.',
+  hintLeaked: 'The tutor reply would have given the answer away, so it was dropped. Try again or look at the hint.',
+
   // --- Band above the prompt -----------------------------------------------------
   bandSetupPending: 'lingo-pane: setup pending. ',
   bandStartSetup: 'Start setup',

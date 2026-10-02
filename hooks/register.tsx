@@ -48,6 +48,7 @@ import {
   INITIAL_WAIT,
   SHOW_DELAY_MS,
   closeOnTurnComplete,
+  isClaudeWorking,
   isKeptOpen,
   isLessonVisible,
   isOfferVisible,
@@ -56,7 +57,40 @@ import {
 import type { WaitEvent } from '../src/wait-machine'
 import { canSeatSplit, claudeStateLine, inlineRows, splitColumns } from '../src/split'
 import type { Viewport } from '../src/split'
-import type { LingoSetup } from '../types'
+import type { LingoActivity, LingoLesson, LingoPractice, LingoSetup, LingoTutorState, LingoUnit } from '../types'
+import {
+  ACTIVITIES,
+  ACTIVITY_STORE_KEY,
+  activityLabel,
+  levelHint,
+  parseActivityLog,
+  recordUnit,
+  suggestActivity,
+} from '../src/activities'
+import {
+  IDLE_LESSON,
+  UNIT_REPLIES,
+  askedForHelp,
+  isAwaitingLearner,
+  markedParts,
+  newUnit,
+  summaryText,
+  withHelp,
+  withLearnerLine,
+  withTutorTurn,
+  withoutTutor,
+} from '../src/conversation'
+import {
+  TUTOR_MAX_TOKENS,
+  TUTOR_TIMEOUT_MS,
+  helpPrompt,
+  openingPrompt,
+  parseTutorTurn,
+  replyPrompt,
+  tutorSystem,
+} from '../src/tutor'
+import type { TutorContext } from '../src/tutor'
+import { listenUrl } from '../src/listen'
 
 const PANE = 'lingo'
 const PANE_TITLE = 'lingo-pane'
@@ -77,7 +111,14 @@ const setupBand = atom({ plugin: 'lingo-pane', key: 'setupBand' } as const, { is
 // in `$.store` under `progress`; this is only where the learner is right now.
 const practice = atom({ plugin: 'lingo-pane', key: 'practice' } as const, IDLE_PRACTICE)
 
-const TUTOR_TIMEOUT_MS = 20000
+// The lesson in the split: the activity on screen and its micro-unit (contract: types/index.d.ts).
+const lesson = atom({ plugin: 'lingo-pane', key: 'lesson' } as const, IDLE_LESSON)
+
+// What the split offers today; the rest of the menu comes with role-play and reading.
+const AVAILABLE_ACTIVITIES: readonly LingoActivity[] = ['conversation', 'review']
+
+// The review's tutor hint (the flashcard practice kept from the first lesson).
+const HINT_TIMEOUT_MS = 20000
 
 // The setup in force: the mirror once loaded, the store otherwise.
 async function currentSetup($: EngineInterface): Promise<LingoSetup | null> {
@@ -98,6 +139,135 @@ async function closeSplit($: EngineInterface) {
 async function touch($: EngineInterface) {
   const state = await read($, wait)
   if (state.pane === 'open' && !state.isTouched) await dispatchWait($, { type: 'touched' })
+}
+
+const nowIso = async ($: EngineInterface) => new Date(await $.clock.now()).toISOString()
+
+// Moving the ring is never worth failing a press over: a pane drawn without the keyboard denies it.
+async function focusKey($: EngineInterface, key: string) {
+  await $.ui.focus({ requestId: PANE, key }).catch(() => undefined)
+}
+
+// What the tutor knows about this learner and this unit.
+function tutorContext(setup: LingoSetup, unit: LingoUnit): TutorContext {
+  return {
+    targetLanguage: setup.targetLanguage,
+    nativeLanguage: setup.nativeLanguage,
+    level: setup.level,
+    interests: setup.interests,
+    activity: unit.activity,
+    scenario: unit.scenario,
+    weave: [],
+    workContext: null,
+  }
+}
+
+// One call on the learner's own plan, with the model chosen in the setup.
+async function callTutor($: EngineInterface, setup: LingoSetup, system: string, prompt: string) {
+  return $.model.complete({
+    model: setup.tutorModel,
+    system,
+    prompt,
+    effort: 'low',
+    maxTokens: TUTOR_MAX_TOKENS,
+    timeoutMs: TUTOR_TIMEOUT_MS,
+  })
+}
+
+// A change to the unit on screen, only if it is still the same unit.
+async function updateUnit($: EngineInterface, id: string, change: (unit: LingoUnit) => LingoUnit) {
+  await update($, lesson, l => (l.unit === null || l.unit.id !== id ? l : { ...l, unit: change(l.unit) }))
+}
+
+// A new micro-unit of conversation (or role-play): the tutor opens it.
+async function openTalkUnit($: EngineInterface, setup: LingoSetup, activity: LingoUnit['activity']) {
+  const unit = newUnit(`${activity}-${await $.clock.now()}`, activity)
+  await update($, lesson, l => ({ ...l, activity, unit, isMenuOpen: false }))
+  await focusKey($, 'reply')
+  const ctx = tutorContext(setup, unit)
+  const reply = await callTutor($, setup, tutorSystem(ctx), openingPrompt(ctx))
+  const turn = reply.isAnswered ? parseTutorTurn(reply.text) : null
+  await updateUnit($, unit.id, u =>
+    u.pending !== 'opening' ? u : turn === null ? withoutTutor(u, LABELS.tutorSilentOpening) : withTutorTurn(u, turn),
+  )
+}
+
+// The review: the built-in pack's Pimsleur queue, started at once (zero clicks).
+async function startReview($: EngineInterface) {
+  await update($, lesson, (l): LingoLesson => ({ ...l, activity: 'review', isMenuOpen: false }))
+  const session = await read($, practice)
+  if (session.lesson !== null && session.status !== 'done') return
+  const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+  if (isFinished(latest, DEMO_LESSON_COUNT)) return
+  const queue = buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
+  await update($, practice, () => startPractice(queue, latest.currentLesson))
+  await focusKey($, 'answer-0')
+}
+
+async function startActivity($: EngineInterface, setup: LingoSetup, activity: LingoActivity) {
+  if (activity === 'review') return startReview($)
+  if (activity === 'conversation') return openTalkUnit($, setup, activity)
+}
+
+// The split opens straight into the unfinished activity, or into the suggested one.
+async function ensureLesson($: EngineInterface, setup: LingoSetup) {
+  const current = await read($, lesson)
+  if (current.activity === 'review') {
+    const session = await read($, practice)
+    if (session.lesson !== null && session.status !== 'done') return
+  } else if (current.unit !== null && current.unit.summary === null) {
+    // A call lost with a reload leaves the unit waiting forever: give it back.
+    if (current.unit.pending !== null && current.unit.lines.length === 0) {
+      return openTalkUnit($, setup, current.unit.activity)
+    }
+    return
+  }
+  const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
+  return startActivity($, setup, suggestActivity(log, AVAILABLE_ACTIVITIES))
+}
+
+// A finished unit: logged; with Claude idle, a split in use closes and says how it went.
+async function finishUnit($: EngineInterface, unit: LingoUnit) {
+  if (unit.summary === null) return
+  const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
+  await $.store.set(ACTIVITY_STORE_KEY, recordUnit(log, unit.activity, unit.summary, await nowIso($)))
+  const state = await read($, wait)
+  if (!isClaudeWorking(state) && isKeptOpen(state)) {
+    await closeSplit($)
+    $.ui.toast(`${LABELS.modName}: ${summaryText(unit.summary)}`)
+    return
+  }
+  await focusKey($, 'next-unit')
+}
+
+// The learner's line: shown at once, then the tutor's answer.
+async function sendReply($: EngineInterface, setup: LingoSetup, text: string) {
+  const before = (await read($, lesson)).unit
+  if (before === null) return
+  const asked = withLearnerLine(before, text)
+  if (asked === before) return
+  await updateUnit($, before.id, () => asked)
+  const ctx = tutorContext(setup, asked)
+  const reply = await callTutor($, setup, tutorSystem(ctx), replyPrompt(ctx, asked, asked.replies >= UNIT_REPLIES))
+  const turn = reply.isAnswered ? parseTutorTurn(reply.text) : null
+  await updateUnit($, before.id, u =>
+    u.pending !== 'reply' ? u : turn === null ? withoutTutor(u, LABELS.tutorSilentReply) : withTutorTurn(u, turn),
+  )
+  const after = (await read($, lesson)).unit
+  if (after !== null && after.id === before.id && after.summary !== null) await finishUnit($, after)
+}
+
+// An empty Enter: a scaffold, never the answer.
+async function sendHelp($: EngineInterface, setup: LingoSetup) {
+  const before = (await read($, lesson)).unit
+  if (before === null) return
+  const asked = askedForHelp(before)
+  if (asked === before) return
+  await updateUnit($, before.id, () => asked)
+  const ctx = tutorContext(setup, asked)
+  const reply = await callTutor($, setup, tutorSystem(ctx), helpPrompt(ctx, asked))
+  const text = reply.isAnswered ? reply.text.trim() : ''
+  await updateUnit($, before.id, u => (u.pending !== 'help' ? u : text === '' ? withoutTutor(u, LABELS.tutorSilentHelp) : withHelp(u, text)))
 }
 
 export const register: Register = (on, options) => {
@@ -202,6 +372,8 @@ export const register: Register = (on, options) => {
     // Asked by the person, so it is placed at any width (docked from 110 columns in fullscreen).
     const opened = await $.ui.open(openArgs(setup, e.presentation?.columns))
     if (opened.isPlaced) await dispatchWait($, { type: 'pane-placed', opener: 'person' })
+    // Straight into the unfinished activity or the suggested one.
+    if (setup !== null) await ensureLesson($, setup)
 
     return {}
   })
@@ -241,6 +413,7 @@ export const register: Register = (on, options) => {
       const opened = await $.ui.open(openArgs(setup))
       if (opened.isPlaced) {
         await dispatchWait($, { type: 'pane-placed', opener: 'mod' })
+        await ensureLesson($, setup)
       } else {
         // It would sit undrawn: drop it and offer a button above the prompt.
         await $.ui.close({ id: PANE })
@@ -396,6 +569,7 @@ export const register: Register = (on, options) => {
                 // Opened by a press: placed at any width, inline when it cannot dock.
                 const opened = await $.ui.open(openArgs(setup))
                 if (opened.isPlaced) await dispatchWait($, { type: 'pane-placed', opener: 'person' })
+                if (setup !== null) await ensureLesson($, setup)
               }}
             />
           </Box>
@@ -423,7 +597,7 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const { Box, Button, Input, Text } = $.ui.resolve(e)
+    const { Box, Button, Input, Link, Text } = $.ui.resolve(e)
 
     // On top of the split: whether the keys are here (Esc hands them back and the
     // split stays), and what Claude is doing.
@@ -448,198 +622,8 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const drawBody = async () => {
-      // Setup pending, or being redone: the wizard. Otherwise the practice.
-      if (setup !== null && !wizard.isOpen) {
-        const session = await read($, practice)
-        const progress = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-        const nowIso = async () => new Date(await $.clock.now()).toISOString()
-        const cardOf = (id: string | undefined) => DEMO_CARDS.find(c => c.id === id)
-        const card = session.lesson === null ? undefined : cardOf(session.queue[session.index])
-
-        const start = async () => {
-          await touch($)
-          const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-          const queue = buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
-          await update($, practice, () => startPractice(queue, latest.currentLesson))
-        }
-
-        // Every attempt goes into the progress: re-read, add, write.
-        const record = async (cardId: string, isCorrect: boolean) => {
-          const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-          await $.store.set(PROGRESS_STORE_KEY, recordAttempt(latest, cardId, await nowIso(), isCorrect))
-        }
-
-        const submit = async (value: string) => {
-          await touch($)
-          const latest = await read($, practice)
-          const current = cardOf(latest.queue[latest.index])
-          if (latest.status !== 'asking' || current === undefined || value.trim() === '') return
-          const isCorrect = isCorrectAnswer(value, current.answer)
-          await record(current.id, isCorrect)
-          await update($, practice, s => afterAnswer(s, isCorrect, current.answer, value.trim()))
-        }
-
-        const showAnswer = async () => {
-          await touch($)
-          const latest = await read($, practice)
-          const current = cardOf(latest.queue[latest.index])
-          if (latest.status !== 'asking' || current === undefined) return
-          // Giving up on a card never tried counts as a miss.
-          if (latest.misses === 0) await record(current.id, false)
-          await update($, practice, s => reveal(s))
-        }
-
-        const next = async () => {
-          await touch($)
-          const latest = await read($, practice)
-          if (latest.status !== 'correct' && latest.status !== 'revealed') return
-          const advanced = nextCard(latest)
-          if (advanced.status === 'done') {
-            // Finishing the lesson being studied moves the learner on, once.
-            const stored = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-            if (latest.lesson === stored.currentLesson) {
-              await $.store.set(PROGRESS_STORE_KEY, advanceLesson(stored, DEMO_LESSON_COUNT))
-            }
-          }
-          await update($, practice, () => advanced)
-          // The button that was pressed holds the ring: hand it to the new field.
-          if (advanced.status === 'asking') {
-            // Never worth failing the press over (a pane drawn without the keyboard denies it).
-            await $.ui.focus({ requestId: PANE, key: `answer-${advanced.index}` }).catch(() => undefined)
-          }
-        }
-
-        const askTutor = async () => {
-          await touch($)
-          const latest = await read($, practice)
-          const current = cardOf(latest.queue[latest.index])
-          if (latest.status !== 'asking' || current === undefined || latest.tutor.kind === 'loading') return
-          await update($, practice, s => ({ ...s, tutor: { kind: 'loading' } }))
-
-          const reply = await $.model.complete({
-            model: 'haiku',
-            system: socratic.instruction({ targetLanguage: setup.targetLanguage, nativeLanguage: setup.nativeLanguage }),
-            prompt: tutorPrompt(current, latest.lastAnswer ?? '(nothing yet)', setup.targetLanguage, setup.nativeLanguage),
-            effort: 'low',
-            maxTokens: 200,
-            timeoutMs: TUTOR_TIMEOUT_MS,
-          })
-
-          // The learner may have moved on while the model thought: drop the reply.
-          const after = await read($, practice)
-          if (after.index !== latest.index || after.status !== 'asking') return
-          if (!reply.isAnswered) {
-            await update($, practice, s => ({ ...s, tutor: { kind: 'unavailable', text: 'The tutor is not available right now. Use the hint above or try again.' } }))
-          } else if (leaksAnswer(reply.text, current.answer)) {
-            await update($, practice, s => ({ ...s, tutor: { kind: 'unavailable', text: 'The tutor reply would have given the answer away, so it was dropped. Try again or look at the hint.' } }))
-          } else {
-            await update($, practice, s => ({ ...s, tutor: { kind: 'answered', text: reply.text.trim() } }))
-          }
-        }
-
-        const finished = isFinished(progress, DEMO_LESSON_COUNT)
-        const isDemoPair = setup.targetLanguage.toLowerCase() === 'english' && setup.nativeLanguage.toLowerCase() === 'spanish'
-        const header = (
-          <Box flexDirection="column">
-            <Text bold>lingo-pane</Text>
-            <Text>
-              Learning {setup.targetLanguage} from {setup.nativeLanguage}, level {setup.level}. /lingo setup changes your choices.
-            </Text>
-            {!isDemoPair && (
-              <Text dimColor>The built-in pack is {DEMO_PACK_TITLE}; it will be used for now.</Text>
-            )}
-          </Box>
-        )
-
-        if (session.lesson === null) {
-          const queue = buildQueue(DEMO_CARDS, progress, new Date(await $.clock.now()))
-          return (
-            <Box flexDirection="column">
-              {header}
-              <Box marginTop={1} flexDirection="column">
-                {finished ? (
-                  <Text>Demo finished: all {DEMO_LESSON_COUNT} lessons are done. Come back to review, or wait for the lesson generator.</Text>
-                ) : (
-                  <Text>
-                    Lesson {progress.currentLesson} of {DEMO_LESSON_COUNT}: {queue.recall.length} to recall, {queue.fresh.length} new.
-                  </Text>
-                )}
-                {!finished && <Button key="start" label="Start lesson" hotkey="s" plain onPress={start} />}
-                <Text dimColor>Tab moves between the field and the buttons; press the key shown.</Text>
-              </Box>
-            </Box>
-          )
-        }
-
-        if (session.status === 'done') {
-          const isLast = session.lesson >= DEMO_LESSON_COUNT
-          return (
-            <Box flexDirection="column">
-              {header}
-              <Box marginTop={1} flexDirection="column">
-                <Text bold color="green">Lesson {session.lesson} done</Text>
-                {isLast && <Text>Demo finished: that was the last lesson.</Text>}
-                <Button key="continue" label="Continue" hotkey="c" plain onPress={async () => {
-                    await touch($)
-                    await update($, practice, () => IDLE_PRACTICE)
-                  }} />
-              </Box>
-            </Box>
-          )
-        }
-
-        const isRecall = session.index < session.recallCount
-        return (
-          <Box flexDirection="column">
-            {header}
-            <Box marginTop={1} flexDirection="column">
-              <Text dimColor>
-                Lesson {session.lesson} - card {session.index + 1} of {session.queue.length} ({isRecall ? 'recall' : 'new'})
-              </Text>
-              <Text bold>{card?.prompt ?? '?'}</Text>
-
-              {session.status === 'asking' && (
-                <Box flexDirection="column">
-                  <Input
-                    key={`answer-${session.index}`}
-                    label={`In ${setup.targetLanguage}`}
-                    placeholder="type your answer"
-                    autoFocus
-                    onInput={() => touch($)}
-                    onSubmit={submit}
-                  />
-                  {session.hint !== null && <Text color="yellow">Not yet. {session.hint}</Text>}
-                  <Box>
-                    <Box marginRight={2}>
-                      <Button key="show-answer" label="Show answer" hotkey="a" plain onPress={showAnswer} />
-                    </Box>
-                    <Button key="tutor" label="Hint from tutor" hotkey="h" plain onPress={askTutor} />
-                  </Box>
-                  {session.tutor.kind === 'loading' && <Text dimColor>The tutor is thinking...</Text>}
-                  {session.tutor.kind === 'answered' && <Text>Tutor: {session.tutor.text}</Text>}
-                  {session.tutor.kind === 'unavailable' && <Text dimColor>{session.tutor.text}</Text>}
-                </Box>
-              )}
-
-              {session.status === 'correct' && (
-                <Box flexDirection="column">
-                  <Text bold color="green">Correct: {card?.answer}</Text>
-                  <Button key="next" label="Next" hotkey="n" plain onPress={next} />
-                </Box>
-              )}
-
-              {session.status === 'revealed' && (
-                <Box flexDirection="column">
-                  <Text>Answer: {card?.answer}</Text>
-                  <Button key="next" label="Next" hotkey="n" plain onPress={next} />
-                </Box>
-              )}
-            </Box>
-          </Box>
-        )
-      }
-
+    // Setup pending, or being redone: the wizard.
+    const drawWizard = () => {
       // What an untouched draft stands for: what is saved, else the userConfig.
       const defaults = setup === null ? draftFromConfig(native, target) : draftFromSetup(setup)
       const draft = wizard.draft ?? defaults
@@ -664,6 +648,8 @@ export const register: Register = (on, options) => {
         await update($, setupCache, () => ({ isLoaded: true, setup: built }))
         await update($, setupWizard, () => CLOSED_WIZARD)
         $.ui.toast(LABELS.setupSaved)
+        // Straight into the lesson, zero clicks.
+        await ensureLesson($, built)
       }
 
       // One row of choice buttons; the picked one is primary. No hotkeys: Tab and Enter.
@@ -858,11 +844,418 @@ export const register: Register = (on, options) => {
       )
     }
 
+    if (setup === null || wizard.isOpen) {
+      return (
+        <Box flexDirection="column">
+          {top}
+          {drawWizard()}
+        </Box>
+      )
+    }
+
+    // The lesson, in the theme's colors; dim while the keys are elsewhere.
+    const theme = themeByName(setup.theme).colors
+    const dim = !isFocused
+    const current = await read($, lesson)
+    const activityColor = theme[current.activity]
+    const chip = (
+      <Box columnGap={1}>
+        <Text backgroundColor={activityColor} color={theme.bg} bold dimColor={dim}>
+          {` ${activityLabel(current.activity)} · ${setup.level} `}
+        </Text>
+        {current.unit?.scenario != null && current.activity === 'roleplay' && (
+          <Text color={theme.dim} dimColor={dim}>
+            {current.unit.scenario.title}
+          </Text>
+        )}
+      </Box>
+    )
+
+    const openMenu = async () => {
+      await touch($)
+      await update($, lesson, l => ({ ...l, isMenuOpen: true }))
+      await focusKey($, `switch-${current.activity}`)
+    }
+    const closeMenu = async () => {
+      await touch($)
+      await update($, lesson, l => ({ ...l, isMenuOpen: false }))
+      await focusKey($, current.activity === 'review' ? `answer-${(await read($, practice)).index}` : 'reply')
+    }
+    // An activity left half done is resumed where it was; otherwise it starts.
+    const choose = async (activity: LingoActivity) => {
+      await touch($)
+      const latest = await read($, lesson)
+      const session = await read($, practice)
+      const isRunning =
+        activity === 'review'
+          ? session.lesson !== null && session.status !== 'done'
+          : latest.unit !== null && latest.unit.activity === activity && latest.unit.summary === null
+      if (!isRunning) return startActivity($, setup, activity)
+      await update($, lesson, (l): LingoLesson => ({ ...l, activity, isMenuOpen: false }))
+      await focusKey($, activity === 'review' ? `answer-${session.index}` : 'reply')
+    }
+    const switchButton = <Button key="switch" label={LABELS.switchActivity} plain dimColor={dim} onPress={openMenu} />
+
+    if (current.isMenuOpen) {
+      const menu = ACTIVITIES.filter(a => AVAILABLE_ACTIVITIES.includes(a.id))
+      return (
+        <Box flexDirection="column">
+          {top}
+          {chip}
+          <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor={theme.ring} paddingX={1}>
+            {menu.map((a, index) => (
+              <Button
+                key={`switch-${a.id}`}
+                label={a.id === current.activity ? `${a.label} ${LABELS.current}` : a.label}
+                hotkey={String(index + 1)}
+                plain
+                onPress={() => choose(a.id)}
+              />
+            ))}
+            <Button key="switch-back" label={LABELS.backToField} plain dimColor onPress={closeMenu} />
+          </Box>
+          <Text color={theme.dim}>{LABELS.menuHint(menu.length)}</Text>
+        </Box>
+      )
+    }
+
+    if (current.activity === 'review') {
+      return (
+        <Box flexDirection="column">
+          {top}
+          {chip}
+          {await drawReview()}
+          <Box marginTop={1}>{switchButton}</Box>
+        </Box>
+      )
+    }
+
+    const unit = current.unit
+    const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
+    const suggested = suggestActivity(log, AVAILABLE_ACTIVITIES)
+    const nextButton = (
+      <Button
+        key="next-unit"
+        label={LABELS.nextActivity(activityLabel(suggested))}
+        variant="primary"
+        autoFocus
+        onPress={async () => {
+          await touch($)
+          await startActivity($, setup, suggested)
+        }}
+      />
+    )
+
+    // Nothing in progress (a reset state): the suggested activity, one press away.
+    if (unit === null) {
+      return (
+        <Box flexDirection="column">
+          {top}
+          {chip}
+          <Box marginTop={1} columnGap={2}>
+            {nextButton}
+            {switchButton}
+          </Box>
+        </Box>
+      )
+    }
+
+    const lastTutor = [...unit.lines].reverse().find(l => l.who === 'tutor')
+    const hint = unit.summary === null ? levelHintLine(null) : levelHintLine(levelHint(log, setup.level))
+    function levelHintLine(found: ReturnType<typeof levelHint>) {
+      return found === null ? null : LABELS.levelHint(found.direction, found.level)
+    }
+
     return (
       <Box flexDirection="column">
         {top}
-        {await drawBody()}
+        {chip}
+        <Box flexDirection="column" marginTop={1}>
+          {unit.lines.map((line, index) =>
+            line.who === 'tutor' ? (
+              <Text key={`line-${index}`} color={theme.fg} dimColor={dim}>
+                <Text color={theme.tutor} bold>
+                  {LABELS.tutor}
+                </Text>
+                {markedParts(line.text, line.mark).map(([part, isMark], at) =>
+                  isMark ? (
+                    <Text key={`mark-${at}`} color={theme.err} underline>
+                      {part}
+                    </Text>
+                  ) : (
+                    part
+                  ),
+                )}
+              </Text>
+            ) : line.who === 'you' ? (
+              <Text key={`line-${index}`} color={theme.fg} dimColor={dim}>
+                <Text color={theme.you} bold>
+                  {LABELS.you}
+                </Text>
+                {line.text}
+              </Text>
+            ) : (
+              <Text key={`line-${index}`} color={theme.dim} italic dimColor={dim}>
+                {LABELS.help}
+                {line.text}
+              </Text>
+            ),
+          )}
+          {unit.pending !== null && (
+            <Text color={theme.dim} dimColor={dim}>
+              {LABELS.tutorThinking}
+            </Text>
+          )}
+          {unit.notice !== null && (
+            <Text color={theme.err} dimColor={dim}>
+              {unit.notice}
+            </Text>
+          )}
+        </Box>
+
+        {unit.summary === null ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Box borderStyle="round" borderColor={isFocused ? theme.ring : theme.dim} paddingX={1}>
+              <Input
+                key="reply"
+                placeholder={LABELS.replyPlaceholder(setup.targetLanguage)}
+                submitLabel={LABELS.replySubmit}
+                autoFocus
+                onInput={() => touch($)}
+                onSubmit={async value => {
+                  await touch($)
+                  if (value.trim() === '') return sendHelp($, setup)
+                  return sendReply($, setup, value)
+                }}
+              />
+            </Box>
+            <Box columnGap={2} flexWrap="wrap">
+              {lastTutor !== undefined && (
+                <Text color={theme.tutor} dimColor={dim}>
+                  <Link href={listenUrl(lastTutor.text, setup.targetLanguage, setup.nativeLanguage)}>{LABELS.listen}</Link>
+                </Text>
+              )}
+              {switchButton}
+            </Box>
+            <Text color={theme.dim} dimColor={dim}>
+              {isAwaitingLearner(unit) ? LABELS.talkHint : LABELS.talkHintWaiting}
+            </Text>
+          </Box>
+        ) : (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={theme.you} bold dimColor={dim}>
+              {summaryText(unit.summary)}
+            </Text>
+            {hint !== null && (
+              <Text color={theme.tutor} dimColor={dim}>
+                {hint}
+              </Text>
+            )}
+            <Box columnGap={2} marginTop={1}>
+              {nextButton}
+              {switchButton}
+            </Box>
+          </Box>
+        )}
       </Box>
     )
+
+    // The review: the built-in pack, card by card. An empty Enter shows the answer
+    // (a miss); no letter hotkeys, since the field takes every printable key.
+    async function drawReview() {
+      const learner = setup as LingoSetup
+      const session = await read($, practice)
+      const progress = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+      const cardOf = (id: string | undefined) => DEMO_CARDS.find(c => c.id === id)
+      const card = session.lesson === null ? undefined : cardOf(session.queue[session.index])
+      const color = { color: theme.fg, dimColor: dim }
+
+      const start = async () => {
+        await touch($)
+        const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+        const queue = buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
+        await update($, practice, () => startPractice(queue, latest.currentLesson))
+        await focusKey($, 'answer-0')
+      }
+
+      // Every attempt goes into the progress: re-read, add, write.
+      const record = async (cardId: string, isCorrect: boolean) => {
+        const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+        await $.store.set(PROGRESS_STORE_KEY, recordAttempt(latest, cardId, await nowIso($), isCorrect))
+      }
+
+      const showAnswer = async () => {
+        const latest = await read($, practice)
+        const current = cardOf(latest.queue[latest.index])
+        if (latest.status !== 'asking' || current === undefined) return
+        // Giving up on a card never tried counts as a miss.
+        if (latest.misses === 0) await record(current.id, false)
+        await update($, practice, s => reveal(s))
+        await focusKey($, 'next')
+      }
+
+      const submit = async (value: string) => {
+        await touch($)
+        if (value.trim() === '') return showAnswer()
+        const latest = await read($, practice)
+        const current = cardOf(latest.queue[latest.index])
+        if (latest.status !== 'asking' || current === undefined) return
+        const isCorrect = isCorrectAnswer(value, current.answer)
+        await record(current.id, isCorrect)
+        await update($, practice, s => afterAnswer(s, isCorrect, current.answer, value.trim()))
+        if (isCorrect) await focusKey($, 'next')
+      }
+
+      const next = async () => {
+        await touch($)
+        const latest = await read($, practice)
+        if (latest.status !== 'correct' && latest.status !== 'revealed') return
+        const advanced = nextCard(latest)
+        if (advanced.status === 'done') {
+          // Finishing the lesson being studied moves the learner on, once.
+          const stored = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+          if (latest.lesson === stored.currentLesson) {
+            await $.store.set(PROGRESS_STORE_KEY, advanceLesson(stored, DEMO_LESSON_COUNT))
+          }
+        }
+        await update($, practice, () => advanced)
+        // The button that was pressed holds the ring: hand it to the new field.
+        await focusKey($, advanced.status === 'asking' ? `answer-${advanced.index}` : 'continue')
+      }
+
+      const askTutor = async () => {
+        await touch($)
+        const latest = await read($, practice)
+        const current = cardOf(latest.queue[latest.index])
+        if (latest.status !== 'asking' || current === undefined || latest.tutor.kind === 'loading') return
+        await update($, practice, (s): LingoPractice => ({ ...s, tutor: { kind: 'loading' } }))
+
+        const reply = await $.model.complete({
+          model: 'haiku',
+          system: socratic.instruction({ targetLanguage: learner.targetLanguage, nativeLanguage: learner.nativeLanguage }),
+          prompt: tutorPrompt(current, latest.lastAnswer ?? '(nothing yet)', learner.targetLanguage, learner.nativeLanguage),
+          effort: 'low',
+          maxTokens: 200,
+          timeoutMs: HINT_TIMEOUT_MS,
+        })
+
+        // The learner may have moved on while the model thought: drop the reply.
+        const after = await read($, practice)
+        if (after.index !== latest.index || after.status !== 'asking') return
+        const tutor: LingoTutorState = !reply.isAnswered
+          ? { kind: 'unavailable', text: LABELS.hintUnavailable }
+          : leaksAnswer(reply.text, current.answer)
+            ? { kind: 'unavailable', text: LABELS.hintLeaked }
+            : { kind: 'answered', text: reply.text.trim() }
+        await update($, practice, s => ({ ...s, tutor }))
+      }
+
+      const isDemoPair = learner.targetLanguage.toLowerCase() === 'english' && learner.nativeLanguage.toLowerCase() === 'spanish'
+      const packNote = !isDemoPair && (
+        <Text color={theme.dim} dimColor={dim}>
+          {LABELS.reviewPackNote(DEMO_PACK_TITLE)}
+        </Text>
+      )
+
+      if (session.lesson === null) {
+        const finished = isFinished(progress, DEMO_LESSON_COUNT)
+        const queue = buildQueue(DEMO_CARDS, progress, new Date(await $.clock.now()))
+        return (
+          <Box flexDirection="column" marginTop={1}>
+            {packNote}
+            <Text {...color}>
+              {finished
+                ? LABELS.reviewDemoFinished(DEMO_LESSON_COUNT)
+                : LABELS.reviewLessonIntro(progress.currentLesson, DEMO_LESSON_COUNT, queue.recall.length, queue.fresh.length)}
+            </Text>
+            {!finished && <Button key="start" label={LABELS.reviewStart} variant="primary" autoFocus onPress={start} />}
+          </Box>
+        )
+      }
+
+      if (session.status === 'done') {
+        return (
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={theme.you} bold dimColor={dim}>
+              {LABELS.reviewLessonDone(session.lesson)}
+            </Text>
+            {session.lesson >= DEMO_LESSON_COUNT && <Text {...color}>{LABELS.reviewDemoLast}</Text>}
+            <Button
+              key="continue"
+              label={LABELS.reviewContinue}
+              variant="primary"
+              autoFocus
+              onPress={async () => {
+                await touch($)
+                await update($, practice, () => IDLE_PRACTICE)
+              }}
+            />
+          </Box>
+        )
+      }
+
+      const isRecall = session.index < session.recallCount
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          {packNote}
+          <Text color={theme.dim} dimColor={dim}>
+            {LABELS.reviewCardOf(session.lesson, session.index + 1, session.queue.length, isRecall)}
+          </Text>
+          <Text color={theme.fg} bold dimColor={dim}>
+            {card?.prompt ?? '?'}
+          </Text>
+
+          {session.status === 'asking' && (
+            <Box flexDirection="column">
+              <Box borderStyle="round" borderColor={isFocused ? theme.ring : theme.dim} paddingX={1}>
+                <Input
+                  key={`answer-${session.index}`}
+                  label={LABELS.reviewIn(learner.targetLanguage)}
+                  placeholder={LABELS.reviewPlaceholder}
+                  submitLabel={LABELS.reviewSubmit}
+                  autoFocus
+                  onInput={() => touch($)}
+                  onSubmit={submit}
+                />
+              </Box>
+              {session.hint !== null && (
+                <Text color={theme.err} dimColor={dim}>
+                  {LABELS.reviewNotYet(session.hint)}
+                </Text>
+              )}
+              <Box columnGap={2}>
+                <Button key="tutor" label={LABELS.reviewHintFromTutor} plain dimColor={dim} onPress={askTutor} />
+              </Box>
+              {session.tutor.kind === 'loading' && <Text color={theme.dim}>{LABELS.tutorThinking}</Text>}
+              {session.tutor.kind === 'answered' && (
+                <Text color={theme.fg} dimColor={dim}>
+                  <Text color={theme.tutor} bold>
+                    {LABELS.tutor}
+                  </Text>
+                  {session.tutor.text}
+                </Text>
+              )}
+              {session.tutor.kind === 'unavailable' && <Text color={theme.dim}>{session.tutor.text}</Text>}
+              <Text color={theme.dim} dimColor={dim}>
+                {LABELS.reviewHint}
+              </Text>
+            </Box>
+          )}
+
+          {session.status !== 'asking' && (
+            <Box flexDirection="column">
+              {session.status === 'correct' ? (
+                <Text color={theme.you} bold dimColor={dim}>
+                  {LABELS.reviewCorrect(card?.answer ?? '')}
+                </Text>
+              ) : (
+                <Text {...color}>{LABELS.reviewAnswer(card?.answer ?? '')}</Text>
+              )}
+              <Button key="next" label={LABELS.next} variant="primary" autoFocus onPress={next} />
+            </Box>
+          )}
+        </Box>
+      )
+    }
   })
 }
