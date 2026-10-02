@@ -2,6 +2,10 @@
   "name": "lingo-pane",
   "version": "0.1.0",
   "description": "Learn a language live in your terminal: a lesson pane, micro-lessons while Claude works, swappable strategies.",
+  "author": {
+    "name": "Asdrúbal Iván Suárez Rivera"
+  },
+  "license": "MIT",
   "userConfig": {
     "targetLanguage": {
       "type": "string",

@@ -68,4 +68,3 @@ Build order: the trigger (this section) first, then strategies plug into it.
 - Audio: system voice only, or bundled assets.
 - Data model of a lesson/exercise and of progress in `$.store`.
 - Whether to also seek listing in Anthropic's directory (unconfirmed that mods are accepted).
-- License.
