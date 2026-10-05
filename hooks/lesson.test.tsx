@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 import { DEMO_CARDS } from '../src/content/demo-english-a1'
+import type { Card } from '../src/strategies'
 
 const SAVED = {
   version: 1,
@@ -32,7 +34,7 @@ const memoryStore = (on: On, initial: Record<string, unknown>) => {
   return entries
 }
 
-const mountPane = ($: Parameters<Parameters<typeof test>[1]>[0], surface: 'terminal' | 'desktop') =>
+const mountPane = ($: Engine, surface: 'terminal' | 'desktop') =>
   $.ui.mount({
     plugin: 'lingo-pane',
     surface,
@@ -42,16 +44,23 @@ const mountPane = ($: Parameters<Parameters<typeof test>[1]>[0], surface: 'termi
     props: PANE_PROPS,
   })
 
-const USAGE = { input_tokens: 1, output_tokens: 1 }
+const USAGE = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+
+// The flashcard practice is the `review` activity now: reached through `switch ▸`,
+// and started at once (zero clicks).
+const toReview = async (pane: Awaited<ReturnType<typeof mountPane>>) => {
+  await pane.press({ key: 'switch' })
+  await pane.press({ key: 'switch-review' })
+}
 
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`lesson 1 end to end on ${surface}: a miss with a hint, a correct answer, a reveal, and progress`, async ($, on) => {
     mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
     const entries = memoryStore(on, { setup: SAVED })
     const pane = await mountPane($, surface)
-    const [first, second] = DEMO_CARDS.filter(c => c.lesson === 1)
+    const [first, second] = DEMO_CARDS.filter(c => c.lesson === 1) as [Card, Card]
 
-    await pane.press({ key: 'start' })
+    await toReview(pane)
     expect(await pane.find({ type: 'Text', text: first.prompt })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: /card 1 of 5 \(new\)/ })).toBeDefined()
 
@@ -68,15 +77,15 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await pane.find({ type: 'Text', text: second.prompt })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: /card 2 of 5/ })).toBeDefined()
 
-    // Show the answer: counts as a miss, then Next.
-    await pane.press({ key: 'show-answer' })
+    // An empty Enter shows the answer: counts as a miss, then Next.
+    await pane.input({ key: 'answer-1', text: '' })
     expect(await pane.find({ type: 'Text', text: `Answer: ${second.answer}` })).toBeDefined()
     await pane.press({ key: 'next' })
 
     const progress = entries.get('progress') as { currentLesson: number; cards: Record<string, { reviews: { isCorrect: boolean }[] }> }
     expect(progress.currentLesson).toBe(1)
-    expect(progress.cards[first.id].reviews.map(r => r.isCorrect)).toEqual([false, true])
-    expect(progress.cards[second.id].reviews.map(r => r.isCorrect)).toEqual([false])
+    expect(progress.cards[first.id]?.reviews.map(r => r.isCorrect)).toEqual([false, true])
+    expect(progress.cards[second.id]?.reviews.map(r => r.isCorrect)).toEqual([false])
     await pane.unmount()
   })
 }
@@ -85,7 +94,7 @@ test('finishing the lesson says so and moves to lesson 2, whose recall block is 
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   const entries = memoryStore(on, { setup: SAVED })
   const pane = await mountPane($, 'terminal')
-  await pane.press({ key: 'start' })
+  await toReview(pane)
   for (const card of DEMO_CARDS.filter(c => c.lesson === 1)) {
     await pane.input({ key: `answer-${DEMO_CARDS.filter(c => c.lesson === 1).indexOf(card)}`, text: card.answer })
     await pane.press({ key: 'next' })
@@ -102,6 +111,7 @@ test('after lesson 6 the pane says the demo is finished', async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   memoryStore(on, { setup: SAVED, progress: { version: 1, currentLesson: 7, cards: {} } })
   const pane = await mountPane($, 'terminal')
+  await toReview(pane)
   expect(await pane.find({ type: 'Text', text: /Demo finished/ })).toBeDefined()
   expect(await pane.find({ key: 'start' })).toBeUndefined()
   await pane.unmount()
@@ -111,14 +121,15 @@ test('corrupt progress starts at lesson 1', async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   memoryStore(on, { setup: SAVED, progress: { version: 9, currentLesson: 'x' } })
   const pane = await mountPane($, 'terminal')
-  expect(await pane.find({ type: 'Text', text: /Lesson 1 of 6/ })).toBeDefined()
+  await toReview(pane)
+  expect(await pane.find({ type: 'Text', text: /Lesson 1 - card 1 of 5/ })).toBeDefined()
   await pane.unmount()
 })
 
 test('the tutor hint sends a capped low-effort request and never shows the answer', async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   memoryStore(on, { setup: SAVED })
-  const [first] = DEMO_CARDS.filter(c => c.lesson === 1)
+  const [first] = DEMO_CARDS.filter(c => c.lesson === 1) as [Card]
   const requests: { system?: string; prompt: string; effort?: string; maxTokens?: number; timeoutMs?: number }[] = []
   let reply = { isAnswered: true as const, text: 'Piensa en cómo saludas al llegar.', usage: USAGE }
   on('model.complete', (_$, e) => {
@@ -127,21 +138,21 @@ test('the tutor hint sends a capped low-effort request and never shows the answe
   })
 
   const pane = await mountPane($, 'terminal')
-  await pane.press({ key: 'start' })
+  await toReview(pane)
   await pane.input({ key: 'answer-0', text: 'bye' })
   await pane.press({ key: 'tutor' })
   expect(requests.length).toBe(1)
   expect(requests[0]).toMatchObject({ effort: 'low', maxTokens: 200 })
-  expect(requests[0].timeoutMs).toBeGreaterThan(0)
-  expect(requests[0].system).toMatch(/tutor/)
-  expect(requests[0].prompt).toContain(first.prompt)
-  expect(requests[0].prompt).toContain('"bye"')
-  expect(await pane.find({ type: 'Text', text: /Tutor: Piensa en cómo saludas/ })).toBeDefined()
+  expect(requests[0]?.timeoutMs).toBeGreaterThan(0)
+  expect(requests[0]?.system).toMatch(/tutor/)
+  expect(requests[0]?.prompt).toContain(first.prompt)
+  expect(requests[0]?.prompt).toContain('"bye"')
+  expect(await pane.find({ type: 'Text', text: /tutor +Piensa en cómo saludas/ })).toBeDefined()
 
   // A reply that leaks the answer is dropped.
   reply = { isAnswered: true, text: `It is ${first.answer}.`, usage: USAGE }
   await pane.press({ key: 'tutor' })
-  expect(await pane.find({ type: 'Text', text: /Tutor: It is/ })).toBeUndefined()
+  expect(await pane.find({ type: 'Text', text: /It is/ })).toBeUndefined()
   expect(await pane.find({ type: 'Text', text: /give the answer away|given the answer away/ })).toBeDefined()
   await pane.unmount()
 })
@@ -150,10 +161,10 @@ test('a tutor that does not answer shows a short message and the lesson goes on'
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   memoryStore(on, { setup: SAVED })
   on('model.complete', () => ({ value: { isAnswered: false, reason: 'aborted', usage: USAGE } }))
-  const [first] = DEMO_CARDS.filter(c => c.lesson === 1)
+  const [first] = DEMO_CARDS.filter(c => c.lesson === 1) as [Card]
 
   const pane = await mountPane($, 'terminal')
-  await pane.press({ key: 'start' })
+  await toReview(pane)
   await pane.press({ key: 'tutor' })
   expect(await pane.find({ type: 'Text', text: /tutor is not available/ })).toBeDefined()
   await pane.input({ key: 'answer-0', text: first.answer })

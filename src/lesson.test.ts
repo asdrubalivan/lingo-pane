@@ -52,10 +52,10 @@ test('progress is validated when read, and bad data starts fresh', () => {
 test('attempts are recorded without mutating, and capped', () => {
   const one = recordAttempt(FRESH_PROGRESS, 'c1', 't1', false)
   expect(FRESH_PROGRESS.cards).toEqual({})
-  expect(one.cards.c1.reviews).toEqual([{ at: 't1', isCorrect: false }])
+  expect(one.cards.c1?.reviews).toEqual([{ at: 't1', isCorrect: false }])
   let many = one
   for (let i = 0; i < 30; i += 1) many = recordAttempt(many, 'c1', `t${i}`, true)
-  expect(many.cards.c1.reviews.length).toBe(20)
+  expect(many.cards.c1?.reviews.length).toBe(20)
 })
 
 test('lessons advance up to "finished"', () => {
@@ -80,7 +80,7 @@ test('lesson 1 has no recall; lesson 8 would recall 7, 5 and 1', () => {
 
 test('a failed card in the recall block goes first inside its lesson', () => {
   const lesson3 = DEMO_CARDS.filter(c => c.lesson === 3)
-  const failed = lesson3[4].id
+  const failed = lesson3[4]!.id
   const progress = recordAttempt({ ...FRESH_PROGRESS, currentLesson: 4 }, failed, 't', false)
   expect(buildQueue(DEMO_CARDS, progress, NOW).recall[0]).toBe(failed)
 })

@@ -1,7 +1,7 @@
 {
   "name": "lingo-pane",
   "version": "0.1.0",
-  "description": "Learn a language live in your terminal: a lesson pane, micro-lessons while Claude works, swappable strategies.",
+  "description": "Learn a language live in your terminal: a lesson split that opens while Claude works, conversation, role-play and reading with a tutor.",
   "author": {
     "name": "Asdrúbal Iván Suárez Rivera"
   },
@@ -18,12 +18,6 @@
       "title": "Native language",
       "description": "The language explanations are written in. Only the default the guided setup (/lingo setup) starts from.",
       "default": "Spanish"
-    },
-    "openPaneWhileWaiting": {
-      "type": "boolean",
-      "title": "Open the lesson pane while Claude works",
-      "description": "Off by default: only a one-line micro-lesson shows in the spinner. When on, the mod also tries to open the lesson pane after a short wait (it needs a wide terminal, otherwise a button offers it).",
-      "default": false
     }
   },
   "types": "./types/index.d.ts"

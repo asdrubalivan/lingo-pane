@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 const SAVED = {
   version: 1,
@@ -32,6 +33,10 @@ const SPINNER = { word: 'Sauteing', message: null, suffix: '…', mode: 'request
 
 type On = Parameters<typeof mock.store>[0]
 
+// /lingo as the person types it: the engine stamps where it came from and where it shows.
+const runLingo = ($: Engine, args: string) =>
+  $.command.run({ command: 'lingo', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
+
 // A store in memory the test can also read and write (the test's `$` has no
 // `$.store`), as the engine keeps it: JSON in, JSON out.
 const memoryStore = (on: On, initial: Record<string, unknown> = {}) => {
@@ -63,7 +68,11 @@ const engineBeneath = (on: On, options: { opensItself?: boolean } = {}) => {
       return { value: { isPlaced: true } }
     })
   }
-  on('command.register', () => ({ value: undefined }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  // The tutor, beneath the plugin: confirming the setup opens the first unit.
+  on('model.complete', () => ({
+    value: { isAnswered: true as const, text: 'FIX: none\nTUTOR: Hi! How are you today?', usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } },
+  }))
   on('ui.render', { component: 'AbovePrompt' }, (_$, e) => {
     const { Box } = _$.ui.resolve(e)
     return <Box />
@@ -113,6 +122,12 @@ test(`the setup pane walks the wizard on ${surface} and saves the choices in the
     await pane.press({ key: 'level-B1' })
     await pane.press({ key: 'next' })
 
+    // Interests: an optional field, kept on Enter like the languages.
+    expect((await pane.find({ key: 'interests-1' }))?.text).toBe('')
+    await pane.input({ key: 'interests-1', text: 'chess, cooking, chess' })
+    expect((await pane.find({ key: 'interests-2' }))?.text).toBe('chess, cooking, chess')
+    await pane.press({ key: 'next' })
+
     // Optional placement test: only a Skip, and the "coming later" note.
     expect(await pane.find({ type: 'Text', text: 'placement test: coming later' })).toBeDefined()
     expect(await pane.find({ key: 'next' })).toBeUndefined()
@@ -124,8 +139,23 @@ test(`the setup pane walks the wizard on ${surface} and saves the choices in the
     expect(await pane.find({ type: 'Text', text: /Direct \(coming later\)/ })).toBeDefined()
     await pane.press({ key: 'next' })
 
-    // (d) summary, then confirm.
+    // (d) preferences: split share, tutor model, theme; Sonnet and Atardecer by default.
+    for (const key of ['share-33', 'share-40', 'share-45', 'share-50', 'tutor-sonnet', 'tutor-haiku', 'tutor-opus', 'theme-atardecer', 'theme-tropico', 'theme-pastel']) {
+      expect(await pane.find({ key })).toBeDefined()
+    }
+    const previewColor = async () => (await pane.find({ type: 'Text', text: /^conversation$/ }))?.props.color
+    expect(await previewColor()).toBe('#ff8a65')
+    await pane.press({ key: 'share-50' })
+    await pane.press({ key: 'tutor-haiku' })
+    await pane.press({ key: 'theme-tropico' })
+    // The preview follows the theme picked.
+    expect(await previewColor()).toBe('#ffb347')
+    await pane.press({ key: 'next' })
+
+    // (e) summary, then confirm.
     expect(await pane.find({ type: 'Text', text: /Ukrainian from Spanish, level B1/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: 'Interests: chess, cooking' })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /Split 50 % · tutor Haiku.* · theme Trópico/ })).toBeDefined()
     expect(entries.get('setup')).toBeUndefined()
     await pane.press({ key: 'confirm' })
 
@@ -135,12 +165,18 @@ test(`the setup pane walks the wizard on ${surface} and saves the choices in the
       nativeLanguage: 'Spanish',
       level: 'B1',
       strategies: SAVED.strategies,
+      interests: ['chess', 'cooking'],
+      splitShare: 50,
+      tutorModel: 'haiku',
+      theme: 'tropico',
       completedAt: '2026-10-02T12:00:00.000Z',
     })
     expect(toasts.at(-1)).toMatch(/setup saved/)
 
-    // Done: the pane greets, and the band is gone without anything else changing.
-    expect(await pane.find({ type: 'Text', text: /Learning Ukrainian from Spanish, level B1/ })).toBeDefined()
+    // Done: straight into the first conversation, and the band is gone.
+    expect(await pane.find({ type: 'Text', text: /conversation · B1/ })).toBeDefined()
+    expect(await pane.find({ type: 'Text', text: /Hi! How are you today\?/ })).toBeDefined()
+    expect(await pane.find({ key: 'reply' })).toBeDefined()
     expect(await band.find({ key: 'setup-start' })).toBeUndefined()
     await pane.unmount()
     await band.unmount()
@@ -257,7 +293,9 @@ test('while setup is pending the spinner shows no micro-lesson, after it the les
   await pane.press({ key: 'next' })
   await pane.press({ key: 'level-A1' })
   await pane.press({ key: 'next' })
+  await pane.press({ key: 'next' })
   await pane.press({ key: 'skip' })
+  await pane.press({ key: 'next' })
   await pane.press({ key: 'next' })
   await pane.press({ key: 'confirm' })
   await pane.unmount()
@@ -330,6 +368,7 @@ test('after /clear the pending setup is announced again, from the store', async 
 })
 
 test('/lingo subcommands: unknown lists the real ones, setup opens the wizard, a second /lingo closes the pane', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   memoryStore(on, { setup: SAVED })
   const { opens } = engineBeneath(on, { opensItself: true })
   let paneUp = false
@@ -348,22 +387,22 @@ test('/lingo subcommands: unknown lists the real ones, setup opens the wizard, a
     return { value: { isPlaced: true } }
   })
 
-  const unknown = await $.command.run({ command: 'lingo', args: 'frobnicate' })
+  const unknown = await runLingo($, 'frobnicate')
   expect(unknown.text).toMatch(/unknown subcommand "frobnicate"/)
   expect(unknown.text).toContain('/lingo setup')
   expect(opens.length).toBe(0)
 
-  // Plain /lingo opens it asking for the keyboard (the practice has a field and hotkeys), the second closes it.
-  await $.command.run({ command: 'lingo', args: '' })
-  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true }])
-  await $.command.run({ command: 'lingo', args: '' })
+  // Plain /lingo opens it asking for the keyboard and 40 % of the 100 columns the command reports; the second closes it.
+  await runLingo($, '')
+  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true, columns: 40 }])
+  await runLingo($, '')
   expect(closes).toEqual(['lingo'])
 
   // setup always opens the wizard, even over an open pane, and asks for the keyboard.
   paneUp = true
-  await $.command.run({ command: 'lingo', args: 'setup' })
+  await runLingo($, 'setup')
   expect(closes).toEqual(['lingo'])
-  expect(opens.at(-1)).toEqual({ id: 'lingo', title: 'lingo-pane', focus: true })
+  expect(opens.at(-1)).toEqual({ id: 'lingo', title: 'lingo-pane', focus: true, columns: 40 })
 
   // The wizard is up, prefilled from what is saved.
   const pane = await $.ui.mount({
@@ -383,6 +422,24 @@ test('a pending setup makes plain /lingo ask for the keyboard so the wizard can 
   memoryStore(on)
   const { opens } = engineBeneath(on)
   on('ui.panes', () => ({ value: [] }))
-  await $.command.run({ command: 'lingo', args: '' })
-  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true }])
+  await runLingo($, '')
+  expect(opens).toEqual([{ id: 'lingo', title: 'lingo-pane', focus: true, columns: 40 }])
+})
+
+test('/lingo theme switches the saved theme in the store; bad names and a pending setup are answered', async ($, on) => {
+  const entries = memoryStore(on)
+  engineBeneath(on)
+
+  expect((await runLingo($, 'theme pastel')).text).toMatch(/finish the setup first/)
+  expect(entries.get('setup')).toBeUndefined()
+
+  entries.set('setup', SAVED)
+  const set = await runLingo($, 'theme Trópico')
+  expect(set.text).toBe('lingo-pane: theme set to Trópico.')
+  // The rest of the setup is kept; the defaults of a setup saved before themes are filled in.
+  expect(entries.get('setup')).toMatchObject({ ...SAVED, theme: 'tropico', splitShare: 40, tutorModel: 'sonnet' })
+
+  expect((await runLingo($, 'theme neon')).text).toMatch(/no theme "neon"/)
+  expect((await runLingo($, 'theme')).text).toMatch(/name a theme/)
+  expect(entries.get('setup')).toMatchObject({ theme: 'tropico' })
 })
