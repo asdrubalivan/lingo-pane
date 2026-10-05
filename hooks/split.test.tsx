@@ -42,7 +42,7 @@ type On = Parameters<typeof mock.store>[0]
 type Dollar = Engine
 
 // The engine beneath the plugin: panes that open (placed or not), close and list.
-const engine = (on: On, options: { isPlaced?: boolean; setup?: unknown } = {}) => {
+const engine = (on: On, options: { isPlaced?: boolean; setup?: unknown; toolCall?: () => Promise<void> } = {}) => {
   const opens: Record<string, unknown>[] = []
   const closes: string[] = []
   const registered: Record<string, unknown>[] = []
@@ -70,11 +70,15 @@ const engine = (on: On, options: { isPlaced?: boolean; setup?: unknown } = {}) =
   on('turn.complete', () => ({ text: '' }))
   on('prompt.submit', (_$, e) => ({ text: e.text }))
   on('tool.check', () => ({ decision: 'ask' }))
+  on('classic.PermissionRequest', () => ({}))
   // The tutor, beneath the plugin: the split opens straight into a conversation.
   on('model.complete', () => ({
     value: { isAnswered: true as const, text: 'FIX: none\nTUTOR: Hello! What are you working on?', usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } },
   }))
-  on('tool.call', () => ({ ref: 0, result: {}, text: '' }))
+  on('tool.call', async () => {
+    await options.toolCall?.()
+    return { ref: 0, result: {}, text: '' }
+  })
   on('ui.render', { component: 'AbovePrompt' }, (_$, e) => {
     const { Box } = _$.ui.resolve(e)
     return <Box />
@@ -254,23 +258,43 @@ test('the split says where the keys are and what Claude is doing', async ($, on)
   await here.unmount()
 })
 
-test('a permission ask dims the split and takes its field away; it stays open and comes back after', async ($, on) => {
+test('a permission dialog dims the split and takes its field away; it stays open and comes back after', async ($, on) => {
   const clock = mock.clock(on)
-  const { closes } = engine(on)
+  const seen: { needsYou: boolean; hasField: boolean }[] = []
+  let pane: Awaited<ReturnType<typeof mountPane>> | null = null
+  let hasDialog = false
+  // Core's order: the check runs inside the call, and an ask reaches the
+  // person only through the dialog (PermissionRequest); in auto mode the
+  // classifier settles it with no dialog.
+  const { closes } = engine(on, {
+    toolCall: async () => {
+      await $.tool.check({ tool: 'Bash', input: { command: 'rm x' }, tool_use_id: 'call-1' } as never)
+      if (hasDialog) await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm x' } })
+      await pane?.redraw()
+      seen.push({
+        needsYou: (await pane?.find({ type: 'Text', text: /Claude needs you/ })) !== undefined,
+        hasField: (await pane?.find({ key: 'reply' })) !== undefined,
+      })
+    },
+  })
   await (await seeTerminal($, WIDE)).unmount()
   await $.turn.start({ text: 'go', turnId: 't1' })
   await clock.advance(2000)
-  const pane = await mountPane($)
+  pane = await mountPane($)
   expect(await pane.find({ key: 'reply' })).toBeDefined()
 
-  await $.tool.check({ tool: 'Bash', input: { command: 'rm x' }, tool_use_id: 'call-1' } as never)
-  await pane.redraw()
-  expect(await pane.find({ type: 'Text', text: /Claude needs you/ })).toBeDefined()
-  expect(await pane.find({ key: 'reply' })).toBeUndefined()
-  expect(closes).toEqual([])
-
+  // Auto mode: an ask the classifier settles never says "Claude needs you".
   await $.tool.call({ tool: 'Bash', command: 'rm x' })
+  expect(seen[0]).toEqual({ needsYou: false, hasField: true })
   await pane.redraw()
+  expect(await pane.find({ key: 'reply' })).toBeDefined()
+
+  hasDialog = true
+  await $.tool.call({ tool: 'Bash', command: 'rm x' })
+  expect(seen[1]).toEqual({ needsYou: true, hasField: false })
+  expect(closes).toEqual([])
+  await pane.redraw()
+  expect(await pane.find({ type: 'Text', text: /Claude needs you/ })).toBeUndefined()
   expect(await pane.find({ key: 'reply' })).toBeDefined()
   await pane.unmount()
 })

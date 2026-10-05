@@ -545,7 +545,7 @@ export const register: Register = (on, options) => {
       }
 
       // Nothing opens while the setup is pending, once retired for a permission
-      // ask, or over a split that is already open.
+      // dialog, or over a split that is already open.
       const state = await read($, wait)
       if (setup === null || state.phase !== 'showing' || state.pane !== 'none') return
       if ((await $.ui.panes()).some(p => p.id === PANE)) return
@@ -632,24 +632,23 @@ export const register: Register = (on, options) => {
 
   // --- Do not cover what the person must answer ----------------------------
 
-  // A real tool call the mode decider will put to the person (a permission ask).
+  // A permission dialog on screen. Not `tool.check`'s `ask`: that hands the call
+  // to the mode's decider, which in auto mode is the classifier, with no dialog.
   // The split stays, dimmed and without its field, so no key meant for the
   // dialog lands in it.
-  on('tool.check', async ($, e, next) => {
-    const verdict = await next(e)
-    if (verdict.decision !== 'ask' || e.tool_use_id === undefined) return verdict
-
+  on('classic.PermissionRequest', async ($, e, next) => {
     delayTimer?.cancel()
     await dispatchWait($, { type: 'needs-user' })
-
-    return verdict
+    return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
     if (String(e.tool) !== 'AskUserQuestion') {
-      // A tool is running, so whatever asked before has been answered.
+      // The call's own check, and any dialog it puts up, run inside `next`: once
+      // it returns, whatever asked has been answered.
+      const result = await next(e)
       await dispatchWait($, { type: 'user-answered' })
-      return next(e)
+      return result
     }
 
     delayTimer?.cancel()

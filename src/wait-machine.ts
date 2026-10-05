@@ -24,9 +24,9 @@ export type WaitEvent =
   | { type: 'delay-elapsed'; turnId: string }
   | { type: 'turn-complete'; turnId: string; isAborted: boolean }
   | { type: 'countdown-elapsed'; turnId: string }
-  /** A permission ask or an AskUserQuestion: the learner is needed elsewhere. */
+  /** A permission dialog or an AskUserQuestion: the learner is needed elsewhere. */
   | { type: 'needs-user' }
-  /** A later tool call ran: whatever asked has been answered. */
+  /** The call that asked has run: whatever asked has been answered. */
   | { type: 'user-answered' }
   /** The split is on screen, opened by the mod itself while waiting or by the person. */
   | { type: 'pane-placed'; opener: LingoPaneOpener }

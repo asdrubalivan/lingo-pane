@@ -59,12 +59,23 @@ test('the spinner carries one micro-lesson after the delay, then drops it', asyn
   expect(await draw()).toBe('Sauteing…')
 })
 
-test('a pending permission ask retires the lesson until a tool runs again', async ($, on) => {
+test('a permission dialog retires the lesson until its call has run; an ask settled without one does not', async ($, on) => {
   const clock = mock.clock(on)
   mock.store(on, { setup: savedSetup() })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('tool.check', () => ({ decision: 'ask' }))
-  on('tool.call', () => ({ ref: 0, result: {}, text: '' }))
+  on('classic.PermissionRequest', () => ({}))
+  // The engine beneath runs a call as core does: the check comes inside the
+  // call, and an ask goes to the mode's decider, which is either the dialog
+  // (PermissionRequest) or, in auto mode, the classifier with no dialog at all.
+  let hasDialog = false
+  const during: (string | undefined)[] = []
+  on('tool.call', async () => {
+    await $.tool.check({ tool: 'Bash', input: { command: 'ls' }, tool_use_id: 'call-1' } as never)
+    if (hasDialog) await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'ls' } })
+    during.push(await draw())
+    return { ref: 0, result: {}, text: '' }
+  })
   on('ui.render', { component: 'Spinner' }, async (_$, e) => {
     const { Text } = _$.ui.resolve(e)
     return <Text>{`${e.props.word}${e.props.suffix}`}</Text>
@@ -86,15 +97,15 @@ test('a pending permission ask retires the lesson until a tool runs again', asyn
   await clock.advance(2000)
   expect(await draw()).toMatch(/ · /)
 
-  // A query (no tool_use_id) is not a real ask and leaves the lesson alone.
-  await $.tool.check({ tool: 'Bash', input: { command: 'ls' } })
+  // Auto mode: the classifier settles the ask and nobody is asked anything.
+  await $.tool.call({ tool: 'Bash', command: 'ls' })
+  expect(during[0]).toMatch(/ · /)
   expect(await draw()).toMatch(/ · /)
 
-  // The engine deciding a real call: the ask would put a dialog on screen.
-  await $.tool.check({ tool: 'Bash', input: { command: 'ls' }, tool_use_id: 'call-1' } as never)
-  expect(await draw()).toBe('Sauteing…')
-
+  // A dialog on screen: the lesson steps aside until the call has run.
+  hasDialog = true
   await $.tool.call({ tool: 'Bash', command: 'ls' })
+  expect(during[1]).toBe('Sauteing…')
   expect(await draw()).toMatch(/ · /)
 })
 
