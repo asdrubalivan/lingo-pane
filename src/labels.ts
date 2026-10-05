@@ -70,6 +70,8 @@ export const LABELS = {
   replyPlaceholder: (target: string) => `reply in ${target}`,
   replySubmit: 'reply',
   listen: '🔊 listen',
+  listenCopied: 'no system voice for this language: the Google Translate link that reads it is copied, paste it in your browser',
+  listenFailed: 'no system voice for this language, and the link could not be copied',
   switchActivity: 'switch ▸',
   talkHint: '⏎ empty = help · Tab = listen and switch',
   talkHintWaiting: 'the tutor is answering; send your next line once it has',

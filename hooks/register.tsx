@@ -91,7 +91,7 @@ import {
   tutorSystem,
 } from '../src/tutor'
 import type { TutorContext } from '../src/tutor'
-import { listenUrl } from '../src/listen'
+import { listenUrl, voiceFor } from '../src/listen'
 import { MAX_ANSWER_EXCERPT, MAX_PROMPT_EXCERPT, NO_CONTEXT, contextForTutor, excerpt } from '../src/context'
 import { generatedOpeningPrompt, parseScenario, pickScenario } from '../src/roleplay'
 import {
@@ -166,6 +166,22 @@ async function closeSplit($: EngineInterface) {
 }
 
 // Any key typed in the split's field or any press there: the split is in use.
+// `🔊 listen`: the phrase in the system voice for the target language; with no
+// voice, the Google Translate link that reads it goes to the clipboard.
+async function listen($: EngineInterface, phrase: string, setup: LingoSetup, surface: Parameters<EngineInterface['ui']['copy']>[0]['surface']) {
+  const voice = voiceFor(setup.targetLanguage)
+  if (voice !== null) {
+    try {
+      await $.audio.speak(phrase, { voice })
+      return
+    } catch {
+      // Not installed, or no synthesizer: the link instead.
+    }
+  }
+  const copied = await $.ui.copy({ text: listenUrl(phrase, setup.targetLanguage, setup.nativeLanguage), surface })
+  $.ui.toast(`${LABELS.modName}: ${copied.isCopied ? LABELS.listenCopied : LABELS.listenFailed}`)
+}
+
 async function touch($: EngineInterface) {
   const state = await read($, wait)
   if (state.pane === 'open' && !state.isTouched) await dispatchWait($, { type: 'touched' })
@@ -769,7 +785,7 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const { Box, Button, Input, Link, Text } = $.ui.resolve(e)
+    const { Box, Button, Input, Text } = $.ui.resolve(e)
 
     // On top of the split: whether the keys are here (Esc hands them back and the
     // split stays), and what Claude is doing.
@@ -1213,9 +1229,7 @@ export const register: Register = (on, options) => {
           <Box columnGap={2} marginTop={1} flexWrap="wrap">
             {reading !== null && (reading.summary !== null || (reading.notice !== null && reading.text === '')) && nextButton}
             {reading !== null && reading.text !== '' && (
-              <Text color={ink(theme.tutor)}>
-                <Link href={listenUrl(reading.text, setup.targetLanguage, setup.nativeLanguage)}>{LABELS.listen}</Link>
-              </Text>
+              <Button key="listen" label={LABELS.listen} plain dimColor={dim} onPress={press => listen($, reading.text, setup, press.surface)} />
             )}
             {switchButton}
           </Box>
@@ -1327,9 +1341,7 @@ export const register: Register = (on, options) => {
             </Box>
             <Box columnGap={2} flexWrap="wrap">
               {lastTutor !== undefined && (
-                <Text color={ink(theme.tutor)}>
-                  <Link href={listenUrl(lastTutor.text, setup.targetLanguage, setup.nativeLanguage)}>{LABELS.listen}</Link>
-                </Text>
+                <Button key="listen" label={LABELS.listen} plain dimColor={dim} onPress={press => listen($, lastTutor.text, setup, press.surface)} />
               )}
               {switchButton}
             </Box>

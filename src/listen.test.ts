@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { languageCode, listenUrl } from './listen'
+import { languageCode, listenUrl, voiceFor } from './listen'
 
 test('language names as typed become codes; unknown ones are null', () => {
   expect(languageCode(' English ')).toBe('en')
@@ -19,4 +19,10 @@ test('the listen link is Google Translate with the phrase encoded, written as UR
   // ASCII only, and capped.
   expect(/^[\x21-\x7e]+$/.test(listenUrl('Привіт світ', 'Ukrainian', 'Spanish'))).toBe(true)
   expect(listenUrl('a'.repeat(1000), 'English', 'Spanish').length).toBeLessThan(400)
+})
+
+test('a system voice per target language; none for one without a voice', () => {
+  expect(voiceFor('English')).toBe('Samantha')
+  expect(voiceFor('ucraniano')).toBe('Lesya')
+  expect(voiceFor('Klingon')).toBeNull()
 })

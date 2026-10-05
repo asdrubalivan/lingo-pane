@@ -26,6 +26,6 @@ Mods run outside the sandbox and can see your prompts and tool calls. What `ling
 - **Reads:** when a turn starts and ends, whether a tool call needs your permission, and the terminal's size, to open and close the split at the right time. It does not keep your prompts or Claude's replies, unless you turn on the option below.
 - **Stores** (in Claude Code's plugin store on your machine): your setup, your progress in the built-in pack, the cards made from your mistakes and a short log of finished units.
 - **Sends to Claude** (with your session's credentials, on your plan): the tutor's requests, which hold your languages, level and interests, your lines in the lesson and the mistakes due for review. With the optional **"material from your own session"** setting on (off by default), also short excerpts of your last prompt and of Claude's last reply, with anything that looks like a key, a password or an email address removed first.
-- **Sends to Google** only when you press `🔊 listen`: the phrase on screen, opened in Google Translate in your browser.
+- **`🔊 listen`** says the phrase on screen with your system's own voice for the language (`say` on macOS), so it stays on your machine. With no voice for that language it copies a Google Translate link instead: the phrase **goes to Google** only if you open that link.
 
 Nothing else leaves your machine.

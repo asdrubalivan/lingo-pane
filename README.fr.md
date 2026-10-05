@@ -26,6 +26,6 @@ Les mods s'exécutent hors du sandbox et peuvent voir vos prompts et vos appels 
 - **Lit :** quand un tour commence et finit, si un appel d'outil demande votre permission, et la taille du terminal, pour ouvrir et fermer le split au bon moment. Il ne garde ni vos prompts ni les réponses de Claude, sauf si vous activez l'option ci-dessous.
 - **Stocke** (dans le stockage des plugins de Claude Code, sur votre machine) : votre configuration, votre progression dans le pack fourni, les cartes tirées de vos erreurs et un court journal des unités terminées.
 - **Envoie à Claude** (avec les identifiants de votre session, sur votre forfait) : les requêtes du tuteur, qui contiennent vos langues, votre niveau et vos centres d'intérêt, vos phrases dans la leçon et les erreurs à réviser. Avec l'option **« matériel de votre propre session »** activée (désactivée par défaut), aussi de courts extraits de votre dernier prompt et de la dernière réponse de Claude, après avoir retiré ce qui ressemble à une clé, un mot de passe ou une adresse e-mail.
-- **Envoie à Google** seulement quand vous appuyez sur `🔊 listen` : la phrase à l'écran, ouverte dans Google Traduction dans votre navigateur.
+- **`🔊 listen`** dit la phrase à l'écran avec la voix de votre système pour cette langue (`say` sur macOS), elle reste donc sur votre machine. S'il n'y a pas de voix pour cette langue, il copie un lien Google Traduction : la phrase **part chez Google** seulement si vous ouvrez ce lien.
 
 Rien d'autre ne quitte votre machine.

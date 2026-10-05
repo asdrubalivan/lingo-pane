@@ -33,13 +33,15 @@ type Request = { model: string; system?: string; prompt: string; effort?: string
 
 // The engine beneath the plugin: a store the test reads, panes, toasts, and a
 // tutor that answers from a script (then "Tell me more.").
-const world = (on: On, options: { setup?: Record<string, unknown>; store?: Record<string, unknown> } = {}) => {
+const world = (on: On, options: { setup?: Record<string, unknown>; store?: Record<string, unknown>; hasVoice?: boolean } = {}) => {
   const entries = new Map<string, unknown>(Object.entries({ setup: options.setup ?? SAVED, ...options.store }))
   const requests: Request[] = []
   const script: (string | null)[] = []
   const opens: Record<string, unknown>[] = []
   const closes: string[] = []
   const toasts: string[] = []
+  const spoken: { text: string; voice?: string }[] = []
+  const copies: string[] = []
   let isUp = false
   on('store.get', (_$, e) => ({ value: entries.get(e.key) }))
   on('store.set', (_$, e) => {
@@ -66,10 +68,20 @@ const world = (on: On, options: { setup?: Record<string, unknown>; store?: Recor
     toasts.push(e.text)
     return { value: undefined }
   })
+  // The system voice: `say` with the voice asked for, or none installed.
+  on('audio.speak', (_$, e) => {
+    if (options.hasVoice === false) throw new Error(`voice ${e.voice} is not installed`)
+    spoken.push({ text: e.text, voice: e.voice })
+    return { value: { via: 'system' as const } }
+  })
+  on('ui.copy', (_$, e) => {
+    copies.push(e.text)
+    return { value: { isCopied: true as const } }
+  })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('prompt.submit', (_$, e) => ({ text: e.text }))
-  return { entries, requests, script, opens, closes, toasts }
+  return { entries, requests, script, opens, closes, toasts, spoken, copies }
 }
 
 type Dollar = Engine
@@ -97,10 +109,36 @@ test('the split opens straight into a conversation: the tutor opens on the setup
   expect(await pane.find({ type: 'Text', text: /tutor +Hi! What did you do last weekend\?/ })).toBeDefined()
   const field = await pane.find({ key: 'reply' })
   expect(field?.props).toMatchObject({ submitLabel: 'reply', autoFocus: true })
-  // 🔊 listen: Google Translate with the tutor's line.
-  const listen = await pane.find({ type: 'Link' })
-  expect(String(listen?.props.href)).toContain('https://translate.google.com/?sl=en&tl=es&text=Hi!%20What%20did')
+  // 🔊 listen: a button reached with Tab, never a link printed whole.
+  expect((await pane.find({ key: 'listen' }))?.props).toMatchObject({ label: '🔊 listen', plain: true })
+  expect(await pane.find({ type: 'Link' })).toBeUndefined()
   expect(await pane.find({ key: 'switch' })).toBeDefined()
+  await pane.unmount()
+})
+
+test('🔊 listen says the tutor\'s line in a system voice for the target language; nothing leaves the machine', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { script, spoken, copies } = world(on)
+  script.push('FIX: none\nTUTOR: Hi! What did you do last weekend?')
+  await openWithCommand($)
+  const pane = await mountPane($)
+  await pane.press({ key: 'listen' })
+  expect(spoken).toEqual([{ text: 'Hi! What did you do last weekend?', voice: 'Samantha' }])
+  expect(copies).toEqual([])
+  await pane.unmount()
+})
+
+test('with no voice for the language, 🔊 listen copies the Google Translate link and says so', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { script, spoken, copies, toasts } = world(on, { hasVoice: false })
+  script.push('FIX: none\nTUTOR: Hi! What did you do last weekend?')
+  await openWithCommand($)
+  const pane = await mountPane($)
+  await pane.press({ key: 'listen' })
+  expect(spoken).toEqual([])
+  expect(copies.length).toBe(1)
+  expect(copies[0]).toContain('https://translate.google.com/?sl=en&tl=es&text=Hi!%20What%20did')
+  expect(toasts.at(-1)).toMatch(/link that reads it is copied/)
   await pane.unmount()
 })
 
