@@ -174,7 +174,7 @@ Checked on the branch: `claude plugin test .` (158 tests), `claude plugin valida
 
 **Not verified without a real session**, to look at in the manual test: whether `focus: true` from a timer is granted and the split really takes the keys; that the dock takes the asked width (40 % by default) and a dragged width wins; the colors on a light terminal theme (nested colored `Text`, the round border, the chip, `dimColor`); which wins the keyboard when a permission dialog comes up over a focused split; the tutor's latency on Sonnet (opening, reply, help, a 700-token reading) and whether it keeps the `FIX:`/`TUTOR:` format; whether the ring stays on the field across redraws and moves where `$.ui.focus` sends it; the once-a-second redraw of the Claude line; the `🔊 listen` link in herdr and tmux.
 
-**Manual test in tmux** (the author's own session; `claude --plugin-dir ~/projects/lingo-pane.worktrees/lesson-ui`, fullscreen layout, a terminal wider than 144 columns, then a narrow one):
+**Manual test in tmux** (the author's own session; `claude --plugin-dir ~/projects/lingo-pane.worktrees/visual-test-findings`, fullscreen layout, a terminal wider than 144 columns, then a narrow one):
 
 1. `/lingo setup`: the new steps (interests, preferences with the three theme previews and the "material from your own session" switch); Confirm opens a conversation at once.
 2. Ask Claude something that takes over 2 s: the split opens by itself on the right at about 40 %, with the keys (`● keys here`), the Claude line counting seconds, and the tutor's opening line within a few seconds. Note the latency.
@@ -183,18 +183,26 @@ Checked on the branch: `claude plugin test .` (158 tests), `claude plugin valida
 5. Let the turn end while typing: the split stays (`✓ Claude done`). Esc: the keys go back to the prompt, the split dims and reads `○ Ctrl+X Tab to come back`; Ctrl+X Tab brings them back.
 6. Finish the three replies with Claude idle: the split closes and the summary comes as a toast. With Claude working: the summary stays with `next: role-play ▸` holding the ring.
 7. Tab to `switch ▸`, Enter, then a digit: role-play (scene line), reading (text, questions, an empty Enter that shows the answer), review (your mistakes first, wrong words marked).
-8. A tool call that needs permission while the split has the keys: the split shows "Claude needs you" with no field; note which one held the keyboard and whether a key meant for the dialog went anywhere else.
+8. With auto mode **off**, a tool call that needs permission while the split has the keys: the split shows "Claude needs you" with no field; note which one held the keyboard and whether a key meant for the dialog went anywhere else. With auto mode on, calls the classifier settles never show it.
 9. Submit a new prompt with a split in use: it closes. `/lingo` twice: opens, closes. `/lingo theme tropico` and `/lingo theme pastel`: colors change.
 10. Narrow terminal (under 110 columns) or the main screen: nothing opens by itself; `1: open lesson` above the prompt opens it inline, about 40 % tall.
 11. If the terminal has a light theme at hand: repeat 2 and 7 there and note what is hard to read.
-12. Press `🔊 listen` (a click: a Link is not a Tab stop) and check that Google Translate opens with the phrase.
+12. Tab to `🔊 listen` and press Enter: the phrase is said in the system voice for the target language. With a target language that has no voice, a toast says the Google Translate link was copied.
+
+**Manual test, 2026-10-02** (herdr, Claude Code 2.1.288, auto mode on, 135 columns): 1-5, 9 and 12 worked; 6, 7, 8 for real (auto mode approved everything), themes, a narrow terminal and a light theme were not tried. Merged to `main` on 2026-10-05 before the fixes below, which are on `fix/visual-test-findings`:
+
+- **False "Claude needs you" in auto mode.** `tool.check`'s `ask` hands the call to the mode's decider, which in auto mode is the classifier with no dialog, and the check runs *inside* `tool.call`, after the old early `user-answered`, so the pause never ended. The pause now comes from `classic.PermissionRequest` (a dialog on screen) and ends once the call has run (`user-answered` after `next(e)`); the tests now model core's order. Not verified in a real session: that `PermissionRequest` fires for every permission dialog and never for a call the classifier settles. Two calls in parallel, one with a dialog: the other one finishing brings the field back early.
+- **`🔊 listen` printed the whole URL.** A `Link` falls back to "text, then URL" where Claude Code does not recognise OSC 8 support (herdr reports `TERM_PROGRAM=Apple_Terminal`), and the mod cannot tell. It is now a plain `Button`, a Tab stop: the press says the phrase with `$.audio.speak` in a macOS voice per language (`src/listen.ts`), so it stays on the machine; with no voice for the language, or one not installed, it copies the Google Translate link (`$.ui.copy`) and says so in a toast. Not verified in a real session: the voice names on other macOS installs, and the speech while Claude works.
+- **The role-play chip broke across lines.** The chip sits in a `Box` that does not shrink, in a row that wraps, so a long title goes under it.
+- **With Esc the reading did not dim.** `dimColor` over a raw color is ignored by Apple_Terminal and herdr; the lesson now draws in the theme's `dim` color while unfocused (`ink()` in the pane), as the border already did.
+- Host, not the mod: ← in a pane field goes to the composer's "← for agents" (turn off "← opens agents" in `/config`), and a click on a setup button selects text.
 
 ## Still open
 
 - Lesson generator: how generated lessons are persisted and validated.
 - Setup: the placement test with the tutor (the step exists and says "coming later"); where learner material and the activity log live beyond "local in `$.store`" (no file locations are asked yet); how the strategy choices reach the core once the strategies are wired to the pane.
 - Exact shape of the strategy interfaces (now five with the lesson generator). Still open, but Pimsleur per lesson forced two additions: `Card.lesson` and `ReviewAlgorithm.dueCards` taking `{ now, currentLesson }` instead of just `now`.
-- Audio: decided for now as a Google Translate link (`🔊 listen`); system voice or bundled assets stay open for later. A `Link` is clicked, not reached with Tab (see step 2 above).
+- Audio: the system voice, with the Google Translate link copied when there is none (see the fixes after the manual test); voices beyond macOS, or bundled assets, stay open.
 - Lesson UI follow-ups from the build: whether `review` should keep the built-in English A1 pack after the learner's own mistakes or drop it; whether the tutor should be able to call out a level change with a button rather than a line; how to keep a line typed while the tutor is still answering (today Enter is ignored then).
 - Data model of a lesson/exercise and of progress in `$.store`.
 - Whether to also seek listing in Anthropic's directory (unconfirmed that mods are accepted).
