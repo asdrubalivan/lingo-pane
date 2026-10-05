@@ -16,7 +16,8 @@ const SAVED = {
 
 const WIDE = { columns: 200, rows: 50, isFullscreen: true }
 const USAGE = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
-const PANE = { title: 'lingo-pane', isFocused: true, bodyColumns: 78, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } as const
+const PANE = (isFocused: boolean) =>
+  ({ title: 'lingo-pane', isFocused, bodyColumns: 78, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} }) as const
 
 // The log after one conversation: the tutor suggests a role-play next.
 const AFTER_CONVERSATION = { version: 1, units: 1, lastDoneAt: { conversation: '2026-10-02T09:00:00.000Z' }, done: { conversation: 1 }, recent: [] }
@@ -57,8 +58,8 @@ const world = (on: On, options: { setup?: Record<string, unknown>; store?: Recor
 const openWithCommand = ($: Dollar) =>
   $.command.run({ command: 'lingo', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 200 } })
 
-const mountPane = ($: Dollar) =>
-  $.ui.mount({ plugin: 'lingo-pane', surface: 'terminal', component: 'Pane', requestId: 'lingo', viewport: WIDE, props: PANE })
+const mountPane = ($: Dollar, isFocused = true) =>
+  $.ui.mount({ plugin: 'lingo-pane', surface: 'terminal', component: 'Pane', requestId: 'lingo', viewport: WIDE, props: PANE(isFocused) })
 
 test('after a conversation the split opens into a role-play from the fixed list; the tutor plays its part', async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
@@ -73,6 +74,9 @@ test('after a conversation the split opens into a role-play from the fixed list;
   expect((await pane.find({ type: 'Text', text: 'Job interview basic' }))?.props.color).toBe('#b39ddb')
   expect(await pane.find({ type: 'Text', text: /You: / })).toBeDefined()
   expect(await pane.find({ key: 'reply' })).toBeDefined()
+  // In a narrow split the scenario's title wraps under the chip; the chip itself never breaks.
+  expect((await pane.find({ key: 'chip-row' }))?.props).toMatchObject({ flexWrap: 'wrap' })
+  expect((await pane.find({ key: 'chip' }))?.props).toMatchObject({ flexShrink: 0 })
   await pane.unmount()
 })
 
@@ -144,6 +148,24 @@ test('a reading: the text, one question at a time; an empty Enter shows the answ
   expect(entries.get('activity')).toMatchObject({ units: 2, done: { reading: 1 } })
   expect(await pane.find({ key: 'next-unit' })).toBeDefined()
   await pane.unmount()
+})
+
+test('with the keys elsewhere the reading recedes into the theme\'s dim color, not a dim attribute some terminals ignore', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { script } = world(on, {
+    store: { activity: { ...AFTER_CONVERSATION, done: { conversation: 1, roleplay: 1 }, lastDoneAt: { conversation: 'b', roleplay: 'c' } } },
+  })
+  script.push(READING)
+  await openWithCommand($)
+
+  const away = await mountPane($, false)
+  expect((await away.find({ type: 'Text', text: /Ana goes to a chess club every Tuesday/ }))?.props.color).toBe('#7e8a99')
+  expect((await away.find({ type: 'Text', text: 'Q1 of 3: When does Ana go to the club?' }))?.props.color).toBe('#7e8a99')
+  await away.unmount()
+
+  const here = await mountPane($, true)
+  expect((await here.find({ type: 'Text', text: /Ana goes to a chess club every Tuesday/ }))?.props.color).toBe('#e8e3da')
+  await here.unmount()
 })
 
 test('a reading the tutor did not write says so and offers to go on', async ($, on) => {

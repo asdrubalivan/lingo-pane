@@ -197,12 +197,15 @@ test('with the keys elsewhere the lesson is dimmed; the theme picks the colors',
   script.push('FIX: none\nTUTOR: Hi!')
   await openWithCommand($)
 
+  // The theme's dim color, not `dimColor`: some terminals (Apple_Terminal, herdr)
+  // do not dim a raw color.
   const away = await mountPane($, false)
-  expect((await away.find({ type: 'Text', text: /tutor +Hi!/ }))?.props.dimColor).toBe(true)
+  expect((await away.find({ type: 'Text', text: /tutor +Hi!/ }))?.props.color).toBe('#7f849c')
+  expect((await away.find({ type: 'Text', text: /^tutor\s*$/ }))?.props.color).toBe('#7f849c')
   await away.unmount()
 
   const here = await mountPane($, true)
-  expect((await here.find({ type: 'Text', text: /tutor +Hi!/ }))?.props.dimColor).toBe(false)
+  expect((await here.find({ type: 'Text', text: /tutor +Hi!/ }))?.props.color).toBe('#cdd6f4')
   expect((await here.find({ type: 'Text', text: /^tutor\s*$/ }))?.props.color).toBe('#89dceb')
   expect((await here.find({ type: 'Text', text: /conversation · B1/ }))?.props.backgroundColor).toBe('#cba6f7')
   await here.unmount()

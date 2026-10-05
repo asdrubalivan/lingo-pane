@@ -1040,20 +1040,25 @@ export const register: Register = (on, options) => {
     // The lesson, in the theme's colors; dim while the keys are elsewhere.
     const theme = themeByName(setup.theme).colors
     const dim = !isFocused
+    // Dim with the theme's own dim color: `dimColor` over a raw color is ignored
+    // by some terminals (Apple_Terminal, herdr), so the lesson would not recede.
+    const ink = (color: string) => (dim ? theme.dim : color)
     const current = await read($, lesson)
     const activityColor = theme[current.activity]
     const chip = (
-      <Box columnGap={1}>
-        <Text backgroundColor={activityColor} color={theme.bg} bold dimColor={dim}>
-          {` ${activityLabel(current.activity)} · ${setup.level} `}
-        </Text>
+      <Box key="chip-row" columnGap={1} flexWrap="wrap">
+        <Box key="chip" flexShrink={0}>
+          <Text backgroundColor={ink(activityColor)} color={theme.bg} bold>
+            {` ${activityLabel(current.activity)} · ${setup.level} `}
+          </Text>
+        </Box>
         {current.activity === 'roleplay' && current.unit?.scenario != null && (
-          <Text color={theme.roleplay} dimColor={dim}>
+          <Text color={ink(theme.roleplay)}>
             {current.unit.scenario.id === null ? LABELS.madeUpScenario(current.unit.scenario.title) : current.unit.scenario.title}
           </Text>
         )}
         {current.activity === 'reading' && current.reading !== null && current.reading.title !== '' && (
-          <Text color={theme.reading} dimColor={dim}>
+          <Text color={ink(theme.reading)}>
             {current.reading.title}
           </Text>
         )}
@@ -1062,7 +1067,7 @@ export const register: Register = (on, options) => {
     // Where a role-play happens and who plays whom, under the chip.
     const scene =
       current.activity === 'roleplay' && current.unit?.scenario != null ? (
-        <Text color={theme.dim} dimColor={dim} wrap="wrap">
+        <Text color={theme.dim} wrap="wrap">
           {LABELS.scene(current.unit.scenario.situation, current.unit.scenario.learnerRole)}
         </Text>
       ) : null
@@ -1148,29 +1153,29 @@ export const register: Register = (on, options) => {
           {top}
           {chip}
           {reading === null || reading.isPending ? (
-            <Text color={theme.dim} dimColor={dim}>
+            <Text color={theme.dim}>
               {LABELS.readingWriting}
             </Text>
           ) : (
             <Box flexDirection="column" marginTop={1}>
               {reading.text !== '' && (
-                <Text color={theme.fg} dimColor={dim} wrap="wrap">
+                <Text color={ink(theme.fg)} wrap="wrap">
                   {reading.text}
                 </Text>
               )}
               {reading.text !== '' && (
-                <Text color={theme.dim} dimColor={dim}>
+                <Text color={theme.dim}>
                   {LABELS.readingGenerated}
                 </Text>
               )}
               {reading.questions.slice(0, reading.index).map((q, at) => (
-                <Text key={`answered-${at}`} color={q.outcome === 'right' ? theme.you : theme.err} dimColor={dim}>
+                <Text key={`answered-${at}`} color={ink(q.outcome === 'right' ? theme.you : theme.err)}>
                   {LABELS.readingAnswered(at + 1, q.question, q.answer, q.outcome === 'right')}
                 </Text>
               ))}
               {question !== undefined && reading.summary === null && (
                 <Box flexDirection="column" marginTop={1}>
-                  <Text color={theme.fg} bold dimColor={dim}>
+                  <Text color={ink(theme.fg)} bold>
                     {LABELS.readingQuestion(reading.index + 1, reading.questions.length, question.question)}
                   </Text>
                   <Box borderStyle="round" borderColor={isFocused ? theme.ring : theme.dim} paddingX={1}>
@@ -1187,19 +1192,19 @@ export const register: Register = (on, options) => {
                     />
                   </Box>
                   {reading.misses > 0 && (
-                    <Text color={theme.err} dimColor={dim}>
+                    <Text color={ink(theme.err)}>
                       {LABELS.readingNotQuite}
                     </Text>
                   )}
                 </Box>
               )}
               {reading.notice !== null && (
-                <Text color={theme.err} dimColor={dim}>
+                <Text color={ink(theme.err)}>
                   {reading.notice}
                 </Text>
               )}
               {reading.summary !== null && (
-                <Text color={theme.you} bold dimColor={dim}>
+                <Text color={ink(theme.you)} bold>
                   {summaryText(reading.summary, 'reading')}
                 </Text>
               )}
@@ -1208,14 +1213,14 @@ export const register: Register = (on, options) => {
           <Box columnGap={2} marginTop={1} flexWrap="wrap">
             {reading !== null && (reading.summary !== null || (reading.notice !== null && reading.text === '')) && nextButton}
             {reading !== null && reading.text !== '' && (
-              <Text color={theme.tutor} dimColor={dim}>
+              <Text color={ink(theme.tutor)}>
                 <Link href={listenUrl(reading.text, setup.targetLanguage, setup.nativeLanguage)}>{LABELS.listen}</Link>
               </Text>
             )}
             {switchButton}
           </Box>
           {question !== undefined && reading?.summary === null && (
-            <Text color={theme.dim} dimColor={dim}>
+            <Text color={theme.dim}>
               {LABELS.readingHint}
             </Text>
           )}
@@ -1264,13 +1269,13 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column" marginTop={1}>
           {unit.lines.map((line, index) =>
             line.who === 'tutor' ? (
-              <Text key={`line-${index}`} color={theme.fg} dimColor={dim}>
-                <Text color={theme.tutor} bold>
+              <Text key={`line-${index}`} color={ink(theme.fg)}>
+                <Text color={ink(theme.tutor)} bold>
                   {LABELS.tutor}
                 </Text>
                 {markedParts(line.text, line.mark).map(([part, isMark], at) =>
                   isMark ? (
-                    <Text key={`mark-${at}`} color={theme.err} underline>
+                    <Text key={`mark-${at}`} color={ink(theme.err)} underline>
                       {part}
                     </Text>
                   ) : (
@@ -1279,26 +1284,26 @@ export const register: Register = (on, options) => {
                 )}
               </Text>
             ) : line.who === 'you' ? (
-              <Text key={`line-${index}`} color={theme.fg} dimColor={dim}>
-                <Text color={theme.you} bold>
+              <Text key={`line-${index}`} color={ink(theme.fg)}>
+                <Text color={ink(theme.you)} bold>
                   {LABELS.you}
                 </Text>
                 {line.text}
               </Text>
             ) : (
-              <Text key={`line-${index}`} color={theme.dim} italic dimColor={dim}>
+              <Text key={`line-${index}`} color={theme.dim} italic>
                 {LABELS.help}
                 {line.text}
               </Text>
             ),
           )}
           {unit.pending !== null && (
-            <Text color={theme.dim} dimColor={dim}>
+            <Text color={theme.dim}>
               {LABELS.tutorThinking}
             </Text>
           )}
           {unit.notice !== null && (
-            <Text color={theme.err} dimColor={dim}>
+            <Text color={ink(theme.err)}>
               {unit.notice}
             </Text>
           )}
@@ -1322,23 +1327,23 @@ export const register: Register = (on, options) => {
             </Box>
             <Box columnGap={2} flexWrap="wrap">
               {lastTutor !== undefined && (
-                <Text color={theme.tutor} dimColor={dim}>
+                <Text color={ink(theme.tutor)}>
                   <Link href={listenUrl(lastTutor.text, setup.targetLanguage, setup.nativeLanguage)}>{LABELS.listen}</Link>
                 </Text>
               )}
               {switchButton}
             </Box>
-            <Text color={theme.dim} dimColor={dim}>
+            <Text color={theme.dim}>
               {isAwaitingLearner(unit) ? LABELS.talkHint : LABELS.talkHintWaiting}
             </Text>
           </Box>
         ) : (
           <Box flexDirection="column" marginTop={1}>
-            <Text color={theme.you} bold dimColor={dim}>
+            <Text color={ink(theme.you)} bold>
               {summaryText(unit.summary, unit.activity)}
             </Text>
             {hint !== null && (
-              <Text color={theme.tutor} dimColor={dim}>
+              <Text color={ink(theme.tutor)}>
                 {hint}
               </Text>
             )}
@@ -1365,7 +1370,7 @@ export const register: Register = (on, options) => {
       }
       const card = session.lesson === null ? undefined : cardOf(session.queue[session.index])
       const cardMistake = session.lesson === null ? undefined : mistakeOf(session.queue[session.index])
-      const color = { color: theme.fg, dimColor: dim }
+      const color = { color: ink(theme.fg) }
 
       const start = async () => {
         await touch($)
@@ -1455,7 +1460,7 @@ export const register: Register = (on, options) => {
 
       const isDemoPair = learner.targetLanguage.toLowerCase() === 'english' && learner.nativeLanguage.toLowerCase() === 'spanish'
       const packNote = !isDemoPair && (
-        <Text color={theme.dim} dimColor={dim}>
+        <Text color={theme.dim}>
           {LABELS.reviewPackNote(DEMO_PACK_TITLE)}
         </Text>
       )
@@ -1482,7 +1487,7 @@ export const register: Register = (on, options) => {
       if (session.status === 'done') {
         return (
           <Box flexDirection="column" marginTop={1}>
-            <Text color={theme.you} bold dimColor={dim}>
+            <Text color={ink(theme.you)} bold>
               {session.lesson > DEMO_LESSON_COUNT ? LABELS.reviewDone : LABELS.reviewLessonDone(session.lesson)}
             </Text>
             {session.lesson >= DEMO_LESSON_COUNT && <Text {...color}>{LABELS.reviewDemoLast}</Text>}
@@ -1504,21 +1509,21 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column" marginTop={1}>
           {packNote}
-          <Text color={theme.dim} dimColor={dim}>
+          <Text color={theme.dim}>
             {cardMistake !== undefined
               ? LABELS.reviewMistakeOf(session.index + 1, session.queue.length)
               : LABELS.reviewCardOf(session.lesson, session.index + 1, session.queue.length, isRecall)}
           </Text>
           {cardMistake === undefined ? (
-            <Text color={theme.fg} bold dimColor={dim}>
+            <Text color={ink(theme.fg)} bold>
               {card?.prompt ?? '?'}
             </Text>
           ) : (
             // The learner's own line, the wrong words marked: type the right ones.
-            <Text color={theme.fg} bold dimColor={dim}>
+            <Text color={ink(theme.fg)} bold>
               {markedParts(cardMistake.sentence, cardMistake.wrong).map(([part, isMark], at) =>
                 isMark ? (
-                  <Text key={`mark-${at}`} color={theme.err} underline>
+                  <Text key={`mark-${at}`} color={ink(theme.err)} underline>
                     {part}
                   </Text>
                 ) : (
@@ -1528,7 +1533,7 @@ export const register: Register = (on, options) => {
             </Text>
           )}
           {cardMistake !== undefined && session.status === 'revealed' && cardMistake.note !== '' && (
-            <Text color={theme.dim} dimColor={dim}>
+            <Text color={theme.dim}>
               {cardMistake.note}
             </Text>
           )}
@@ -1547,7 +1552,7 @@ export const register: Register = (on, options) => {
                 />
               </Box>
               {session.hint !== null && (
-                <Text color={theme.err} dimColor={dim}>
+                <Text color={ink(theme.err)}>
                   {LABELS.reviewNotYet(session.hint)}
                 </Text>
               )}
@@ -1556,15 +1561,15 @@ export const register: Register = (on, options) => {
               </Box>
               {session.tutor.kind === 'loading' && <Text color={theme.dim}>{LABELS.tutorThinking}</Text>}
               {session.tutor.kind === 'answered' && (
-                <Text color={theme.fg} dimColor={dim}>
-                  <Text color={theme.tutor} bold>
+                <Text color={ink(theme.fg)}>
+                  <Text color={ink(theme.tutor)} bold>
                     {LABELS.tutor}
                   </Text>
                   {session.tutor.text}
                 </Text>
               )}
               {session.tutor.kind === 'unavailable' && <Text color={theme.dim}>{session.tutor.text}</Text>}
-              <Text color={theme.dim} dimColor={dim}>
+              <Text color={theme.dim}>
                 {LABELS.reviewHint}
               </Text>
             </Box>
@@ -1573,7 +1578,7 @@ export const register: Register = (on, options) => {
           {session.status !== 'asking' && (
             <Box flexDirection="column">
               {session.status === 'correct' ? (
-                <Text color={theme.you} bold dimColor={dim}>
+                <Text color={ink(theme.you)} bold>
                   {LABELS.reviewCorrect(card?.answer ?? '')}
                 </Text>
               ) : (
