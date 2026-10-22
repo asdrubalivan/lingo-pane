@@ -166,7 +166,7 @@ test('a tutor that does not answer shows a short message and the lesson goes on'
   const pane = await mountPane($, 'terminal')
   await toReview(pane)
   await pane.press({ key: 'tutor' })
-  expect(await pane.find({ type: 'Text', text: /tutor is not available/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /cancelled or took too long. Use the hint above/ })).toBeDefined()
   await pane.input({ key: 'answer-0', text: first.answer })
   expect(await pane.find({ type: 'Text', text: /Correct/ })).toBeDefined()
   await pane.unmount()
