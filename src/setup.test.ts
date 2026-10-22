@@ -178,6 +178,12 @@ test('buildSetup saves a valid draft trimmed, and refuses an incomplete or inval
   expect(buildSetup({ ...draft, strategies: { ...DEFAULT_STRATEGIES, correctionStyle: 'direct' } }, 'now')).toBeNull()
 })
 
+test('parseSetup keeps the language names without the padding they were saved with', () => {
+  const padded = parseSetup({ ...SAVED, targetLanguage: ' French ', nativeLanguage: 'Spanish  ' })
+  expect(padded?.targetLanguage).toBe('French')
+  expect(padded?.nativeLanguage).toBe('Spanish')
+})
+
 test('parseSetup accepts what buildSetup wrote and nothing else', () => {
   expect(parseSetup(SAVED)).toEqual(SAVED)
   // Round trip through JSON, as $.store gives it back.

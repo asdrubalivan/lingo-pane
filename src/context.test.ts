@@ -73,3 +73,9 @@ test('the tutor reads the prompt and the reply, or nothing', () => {
     'The learner asked Claude: fix it\nClaude replied: Done: the parser handles dates.',
   )
 })
+
+test('a rule or banner of dashes and equals signs is not a secret', () => {
+  const rule = `${'-'.repeat(40)} ${'='.repeat(40)} ${'_'.repeat(40)}`
+  expect(excerpt(rule, 300)).toBe(rule)
+  expect(excerpt(`ok ${'a1'.repeat(20)}==`, 300)).toBe('ok [redacted]')
+})

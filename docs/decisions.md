@@ -190,7 +190,6 @@ Checked on the branch: `claude plugin test .` (158 tests), `claude plugin valida
 
 **Not verified without a real session**, to look at in the manual test: whether `focus: true` from a timer is granted and the split really takes the keys; that the dock takes the asked width (40 % by default) and a dragged width wins; the colors on a light terminal theme (nested colored `Text`, the round border, the chip, `dimColor`); which wins the keyboard when a permission dialog comes up over a focused split; the tutor's latency on Sonnet (opening, reply, help, a 700-token reading) and whether it keeps the `FIX:`/`TUTOR:` format; whether the ring stays on the field across redraws and moves where `$.ui.focus` sends it; the once-a-second redraw of the Claude line; the `🔊 listen` link in herdr and tmux.
 **Manual test:** the steps are in [`manual-checklist.md`](manual-checklist.md), versioned with the code (a real `/clear`, the "Lesson N done" and demo-finished screens, input focus, the split and its closing rules, the dock, the colors).
-**Manual test in tmux** (the author's own session; `claude --plugin-dir ~/projects/lingo-pane.worktrees/lesson-ui`, fullscreen layout, a terminal wider than 144 columns, then a narrow one):
 
 ## Still open
 

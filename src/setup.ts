@@ -325,8 +325,8 @@ export function parseSetup(raw: unknown): LingoSetup | null {
 
   return {
     version: SETUP_VERSION,
-    targetLanguage,
-    nativeLanguage,
+    targetLanguage: targetLanguage.trim(),
+    nativeLanguage: nativeLanguage.trim(),
     level: level as LingoLevel,
     strategies: chosen,
     interests: Array.isArray(interests)

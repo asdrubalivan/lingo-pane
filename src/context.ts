@@ -25,8 +25,8 @@ const REDACTIONS: readonly [RegExp, string][] = [
   [/\bAKIA[0-9A-Z]{16}\b/g, '[redacted]'],
   [/\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*\S+/gi, '[redacted]'],
   [/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]'],
-  // A long unbroken run of key-like characters (a token, a hash), padding `=` included.
-  [/(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_=-]{32,}(?![A-Za-z0-9+/_=-])/g, '[redacted]'],
+  // A long unbroken run of key-like characters (a token, a hash), padding `=` included, but not a rule of `-` or `=`.
+  [/(?<![A-Za-z0-9+/_=-])(?=[=_-]*[A-Za-z0-9+/])[A-Za-z0-9+/_=-]{32,}(?![A-Za-z0-9+/_=-])/g, '[redacted]'],
 ]
 
 /** The text with what looks like a secret replaced, whitespace collapsed, and cut to `max`. */

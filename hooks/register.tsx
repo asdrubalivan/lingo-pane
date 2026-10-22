@@ -1435,11 +1435,13 @@ export const register: Register = (on, options) => {
         // The learner may have moved on while the model thought: drop the reply.
         const after = await read($, practice)
         if (after.index !== latest.index || after.status !== 'asking') return
-        const tutor: LingoTutorState = !reply.isAnswered
-          ? { kind: 'unavailable', text: LABELS.hintUnavailable(failureReason(reply)) }
-          : leaksAnswer(reply.text, current.answer)
-            ? { kind: 'unavailable', text: LABELS.hintLeaked }
-            : { kind: 'answered', text: reply.text.trim() }
+        const hint = reply.isAnswered ? parseHelp(reply.text) : null
+        const tutor: LingoTutorState =
+          hint === null
+            ? { kind: 'unavailable', text: LABELS.hintUnavailable(whyNothing(reply)) }
+            : leaksAnswer(hint, current.answer)
+              ? { kind: 'unavailable', text: LABELS.hintLeaked }
+              : { kind: 'answered', text: hint }
         await update($, practice, s => ({ ...s, tutor }))
       }
 
