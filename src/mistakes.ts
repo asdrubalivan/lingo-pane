@@ -6,6 +6,7 @@
 // way, with no wrong words (`wrong` empty): it is reviewed, never woven or shown
 // in the Spinner. Pure: no `$`, no I/O; inputs are never mutated.
 
+import { validCorrection } from './conversation'
 import { normalizeAnswer } from './lesson'
 import { pickIndex } from './microcards'
 import { dueCards } from './review/pimsleur'
@@ -126,8 +127,13 @@ export function wovenOutcome(lines: readonly LingoLine[], card: { wrong: string;
 /** The Spinner's line for a mistake. */
 export const spinnerLine = (card: { wrong: string; right: string }): string => `${card.wrong} → ${card.right}`
 
-/** Cards from a wrong form (not reading questions): the ones to weave and to show in the Spinner. */
-export const isFormCard = (card: LingoMistakeCard): boolean => card.wrong !== ''
+/**
+ * Cards from a wrong form (not reading questions) that would still pass as a
+ * correction: the ones to weave into a prompt and to show in the Spinner. A card
+ * kept under older rules that does not is still reviewed, but its words are
+ * never quoted back to the tutor or the terminal.
+ */
+export const isFormCard = (card: LingoMistakeCard): boolean => card.wrong !== '' && validCorrection(card) !== null
 
 /** The mistake the Spinner shows this turn: a due one if any, else one of the latest; null with none. */
 export function pickForTurn(mistakes: LingoMistakes, currentUnit: number, turnId: string): LingoMistakeCard | null {
