@@ -41,3 +41,15 @@ export function sanitizeModelText(text: string, max: number): string {
   const cut = /[\ud800-\udbff]/.test(clean.charAt(max - 1)) ? max - 1 : max
   return clean.slice(0, cut)
 }
+
+// The labels of the reply formats the mod asks the model for (the tutor turn,
+// the made-up scenario, the reading), alone or in bold: `FIX:`, `**TUTOR**:`.
+const LABELS = String.raw`FIX|TUTOR|SCENARIO|TITLE|TEXT|Q\d`
+const MARKER = new RegExp(String.raw`\b(?:${LABELS})\s*\**\s*:`, 'i')
+const MARKERS = new RegExp(String.raw`\b(${LABELS})\s*\**\s*:`, 'gi')
+
+/** The text holds something a reply-format parser would read as a label. */
+export const hasProtocolMarker = (text: string): boolean => MARKER.test(text)
+
+/** The text with every reply-format label defused (`FIX:` becomes `FIX -`), so quoting it cannot forge a reply. */
+export const neutralizeProtocolMarkers = (text: string): string => text.replace(MARKERS, '$1 -')

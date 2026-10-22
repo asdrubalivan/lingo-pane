@@ -1,10 +1,15 @@
 // The contextual mode (opt-in in the setup): short excerpts of the learner's
 // own session, their last prompt and Claude's last reply, become topic ideas
 // for the tutor. Off, nothing is kept. On, what is kept is cut short and
-// anything that looks like a secret is redacted before it reaches `$.state`,
-// and from there the tutor's model call. Pure.
+// anything that looks like a secret is redacted, and the text is neutralised
+// (it can come from a web page or a file, so it is untrusted), before it
+// reaches `$.state` and from there the tutor's model call. Pure.
 
+import { neutralizeProtocolMarkers } from './sanitize'
 import type { LingoWorkContext } from '../types'
+
+/** What the prompts put around the excerpt; the excerpt itself can never hold it. */
+export const EXCERPT_DELIMITER = '"""'
 
 export const MAX_PROMPT_EXCERPT = 300
 export const MAX_ANSWER_EXCERPT = 500
@@ -29,10 +34,18 @@ const REDACTIONS: readonly [RegExp, string][] = [
   [/(?<![A-Za-z0-9+/_=-])(?=[=_-]*[A-Za-z0-9+/])[A-Za-z0-9+/_=-]{32,}(?![A-Za-z0-9+/_=-])/g, '[redacted]'],
 ]
 
-/** The text with what looks like a secret replaced, whitespace collapsed, and cut to `max`. */
+// Any run of the delimiter's character that long or longer, whatever follows it.
+const DELIMITER_RUN = new RegExp(`${EXCERPT_DELIMITER.charAt(0)}{${EXCERPT_DELIMITER.length},}`, 'g')
+
+/**
+ * The text with what looks like a secret replaced, the prompt delimiter and the
+ * reply-format labels (`FIX:`, `TUTOR:`) defused so it can neither close its
+ * block nor forge a reply, whitespace collapsed, and cut to `max`.
+ */
 export function excerpt(text: string, max: number): string | null {
   let clean = text
   for (const [pattern, replacement] of REDACTIONS) clean = clean.replace(pattern, replacement)
+  clean = neutralizeProtocolMarkers(clean.replace(DELIMITER_RUN, EXCERPT_DELIMITER.charAt(0)))
   clean = clean.replace(/\s+/g, ' ').trim()
   if (clean === '') return null
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean
