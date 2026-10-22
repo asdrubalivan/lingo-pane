@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
+import { savedMistakes } from '../src/memory-store'
+
 // The conversation in micro-units: the split opens straight into it (zero
 // clicks), the tutor opens, the learner replies, a mistake is pointed at (the
 // wrong words in the error color, the right form kept for the cards), an empty
@@ -160,7 +162,7 @@ test('a hostile reply is drawn and stored without control sequences', async ($, 
 
   await pane.input({ key: 'reply', text: 'I went there.' })
   await pane.input({ key: 'reply', text: 'It was fun.' })
-  const saved = entries.get('mistakes') as { cards: { wrong: string; right: string; note: string }[] }
+  const saved = await savedMistakes(entries)
   expect(saved.cards).toMatchObject([{ wrong: 'go', right: 'went', note: 'pasado' }])
   await pane.unmount()
 })

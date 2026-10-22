@@ -1,5 +1,5 @@
 // Mistakes become cards: when a micro-unit closes, each correction the tutor
-// made is kept in `$.store` (under `mistakes`), numbered by the unit it came
+// made is kept in `$.store` (one key each, see storage.ts), numbered by the unit it came
 // from, so the Pimsleur review brings it back at units n+1, n+3 and n+7. Due
 // cards are woven into the next conversations, shown in the Spinner, and come
 // first in `review`. A reading question whose answer was shown is kept the same
@@ -38,30 +38,35 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 
 const isText = (value: unknown): value is string => typeof value === 'string'
 
-/** Whatever `$.store` held under `mistakes`; none when it is not readable. */
+/** One stored mistake card; null when it is not valid. */
+export function parseMistakeCard(raw: unknown): LingoMistakeCard | null {
+  if (
+    !isObject(raw) ||
+    !(isText(raw.id) && isText(raw.wrong) && isText(raw.right) && isText(raw.note) && isText(raw.sentence) && isText(raw.createdAt)) ||
+    typeof raw.unit !== 'number' || !Number.isInteger(raw.unit) || raw.unit < 1
+  ) {
+    return null
+  }
+  return {
+    id: raw.id,
+    wrong: raw.wrong,
+    right: raw.right,
+    note: raw.note,
+    sentence: raw.sentence,
+    unit: raw.unit,
+    createdAt: raw.createdAt,
+    reviews: (Array.isArray(raw.reviews) ? raw.reviews : [])
+      .filter(isObject)
+      .filter(r => isText(r.at) && typeof r.isCorrect === 'boolean')
+      .map(r => ({ at: r.at as string, isCorrect: r.isCorrect as boolean }))
+      .slice(-MAX_REVIEWS),
+  }
+}
+
+/** Whatever `$.store` held under `mistakes` (the layout before one key per card); none when it is not readable. */
 export function parseMistakes(raw: unknown): LingoMistakes {
   if (!isObject(raw) || raw.version !== MISTAKES_VERSION || !Array.isArray(raw.cards)) return NO_MISTAKES
-  const cards: LingoMistakeCard[] = raw.cards
-    .filter(isObject)
-    .filter(
-      c =>
-        isText(c.id) && isText(c.wrong) && isText(c.right) && isText(c.note) && isText(c.sentence) && isText(c.createdAt) &&
-        typeof c.unit === 'number' && Number.isInteger(c.unit) && c.unit >= 1,
-    )
-    .map(c => ({
-      id: c.id as string,
-      wrong: c.wrong as string,
-      right: c.right as string,
-      note: c.note as string,
-      sentence: c.sentence as string,
-      unit: c.unit as number,
-      createdAt: c.createdAt as string,
-      reviews: (Array.isArray(c.reviews) ? c.reviews : [])
-        .filter(isObject)
-        .filter(r => isText(r.at) && typeof r.isCorrect === 'boolean')
-        .map(r => ({ at: r.at as string, isCorrect: r.isCorrect as boolean }))
-        .slice(-MAX_REVIEWS),
-    }))
+  const cards = raw.cards.map(parseMistakeCard).filter((c): c is LingoMistakeCard => c !== null)
   return { version: MISTAKES_VERSION, cards: cards.slice(-MAX_MISTAKES) }
 }
 

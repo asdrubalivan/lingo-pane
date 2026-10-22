@@ -88,7 +88,7 @@ import {
 import type { TutorContext } from '../src/tutor'
 import { listenUrl } from '../src/listen'
 import { MAX_ANSWER_EXCERPT, MAX_PROMPT_EXCERPT, NO_CONTEXT, contextForTutor, excerpt } from '../src/context'
-import { ACTIVITY, MISTAKES, PROGRESS, SETUP, commitUnit, keepMistakes, load, modify, save } from '../src/storage'
+import { ACTIVITY, MISTAKES, SETUP, commitUnit, keepMistakes, load, modify, progressOf, save } from '../src/storage'
 import type { FinishedUnit, Store } from '../src/storage'
 import { generatedOpeningPrompt, parseScenario, pickScenario } from '../src/roleplay'
 import {
@@ -164,11 +164,15 @@ async function touch($: EngineInterface) {
   if (state.pane === 'open' && !state.isTouched) await dispatchWait($, { type: 'touched' })
 }
 
-// `$` cannot be handed to the storage module across an import: it gets the two calls.
+// `$` cannot be handed to the storage module across an import: it gets the calls.
 const storeOf = ($: EngineInterface): Store => ({
   get: key => $.store.get(key),
   set: (key, value) => $.store.set(key, value),
+  delete: key => $.store.delete(key),
 })
+
+// The progress kept for the built-in pack's cards (one key per card).
+const PACK_PROGRESS = progressOf(DEMO_CARDS.map(c => c.id))
 
 const nowIso = async ($: EngineInterface) => new Date(await $.clock.now()).toISOString()
 
@@ -295,7 +299,7 @@ async function startReview($: EngineInterface) {
   if (session.lesson !== null && session.status !== 'done') return
   const queue = await reviewQueue($)
   if (queue.recall.length + queue.fresh.length === 0) return
-  const latest = await load(storeOf($), PROGRESS)
+  const latest = await load(storeOf($), PACK_PROGRESS)
   await update($, practice, () => startPractice(queue, latest.currentLesson))
   await focusKey($, 'answer-0')
 }
@@ -304,7 +308,7 @@ async function startReview($: EngineInterface) {
 async function reviewQueue($: EngineInterface): Promise<LessonQueue> {
   const log = await load(storeOf($), ACTIVITY)
   const due = dueMistakes(await load(storeOf($), MISTAKES), nextUnit(log)).map(c => c.id)
-  const latest = await load(storeOf($), PROGRESS)
+  const latest = await load(storeOf($), PACK_PROGRESS)
   const pack = isFinished(latest, DEMO_LESSON_COUNT)
     ? { recall: [], fresh: [] }
     : buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
@@ -1349,7 +1353,7 @@ export const register: Register = (on, options) => {
     async function drawReview() {
       const learner = setup as LingoSetup
       const session = await read($, practice)
-      const progress = await load(storeOf($), PROGRESS)
+      const progress = await load(storeOf($), PACK_PROGRESS)
       const mistakes = await load(storeOf($), MISTAKES)
       const mistakeOf = (id: string | undefined) => mistakes.cards.find(c => c.id === id)
       const cardOf = (id: string | undefined) => {
@@ -1362,7 +1366,7 @@ export const register: Register = (on, options) => {
 
       const start = async () => {
         await touch($)
-        const latest = await load(storeOf($), PROGRESS)
+        const latest = await load(storeOf($), PACK_PROGRESS)
         const queue = await reviewQueue($)
         await update($, practice, () => startPractice(queue, latest.currentLesson))
         await focusKey($, 'answer-0')
@@ -1375,7 +1379,7 @@ export const register: Register = (on, options) => {
           await modify(storeOf($), MISTAKES, latest => recordMistakeReview(latest, cardId, at, isCorrect))
           return
         }
-        await modify(storeOf($), PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
+        await modify(storeOf($), PACK_PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
       }
 
       const showAnswer = async () => {
@@ -1407,7 +1411,7 @@ export const register: Register = (on, options) => {
         const advanced = nextCard(latest)
         if (advanced.status === 'done') {
           // Finishing the lesson being studied moves the learner on, once.
-          await modify(storeOf($), PROGRESS, stored =>
+          await modify(storeOf($), PACK_PROGRESS, stored =>
             latest.lesson === stored.currentLesson ? advanceLesson(stored, DEMO_LESSON_COUNT) : stored,
           )
         }

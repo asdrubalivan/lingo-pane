@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
+import { savedMistakes } from '../src/memory-store'
+
 // The store behind the pane: a unit closes in one step (mistakes and log on the
 // same unit number), and a store that is corrupt, foreign or failing never
 // breaks the pane.
@@ -77,7 +79,7 @@ test('the mistakes and the log agree on the unit number, even when another sessi
   await pane.input({ key: 'reply', text: 'It is warm' })
 
   expect(entries.get('activity')).toMatchObject({ units: 5, done: { reading: 4, conversation: 1 } })
-  expect((entries.get('mistakes') as { cards: { unit: number }[] }).cards.map(c => c.unit)).toEqual([5])
+  expect((await savedMistakes(entries)).cards.map(c => c.unit)).toEqual([5])
   await pane.unmount()
 })
 
@@ -89,7 +91,7 @@ test('a corrupt or foreign-version log and mistakes start over instead of breaki
   const pane = await mountPane($)
   await finishUnit(pane)
   expect(entries.get('activity')).toMatchObject({ version: 1, units: 1 })
-  expect((entries.get('mistakes') as { cards: { unit: number }[] }).cards.map(c => c.unit)).toEqual([1])
+  expect((await savedMistakes(entries)).cards.map(c => c.unit)).toEqual([1])
   await pane.unmount()
 })
 
@@ -97,7 +99,7 @@ test('a store that cannot be read still opens the conversation', async ($, on) =
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   const { failing, requests } = world(on)
   failing.get.add('activity')
-  failing.get.add('mistakes')
+  failing.get.add('mistakes.index')
   await openWithCommand($)
   expect(requests()).toBe(1)
   const pane = await mountPane($)
@@ -109,12 +111,31 @@ test('a store that cannot be written does not break the unit: it closes and says
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   const { entries, failing, toasts } = world(on)
   failing.set.add('activity')
-  failing.set.add('mistakes')
+  failing.set.add('mistakes.index')
   await openWithCommand($)
   const pane = await mountPane($)
   await finishUnit(pane)
   expect(toasts.at(-1)).toBe('lingo-pane: ✓ 3 sentences, 1 correction saved')
   expect(entries.has('activity')).toBe(false)
-  expect(entries.has('mistakes')).toBe(false)
+  expect(entries.has('mistakes.index')).toBe(false)
   await pane.unmount()
+})
+
+test('a store that cannot move the old layout leaves it alone, the unit still closes, and the move happens later', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const old = { version: 1, cards: [{ id: 'mistake-old', wrong: 'is', right: 'are', note: 'plural', sentence: 'They is here.', unit: 1, createdAt: '2026-10-01T10:00:00.000Z', reviews: [] }] }
+  const { entries, failing, toasts } = world(on, { mistakes: old })
+  failing.get.add('mistakes')
+  await openWithCommand($)
+  const pane = await mountPane($)
+  await finishUnit(pane)
+  expect(toasts.at(-1)).toBe('lingo-pane: ✓ 3 sentences, 1 correction saved')
+  expect(entries.get('mistakes')).toEqual(old)
+  expect(entries.has('storage.layout')).toBe(false)
+  expect(entries.has('mistakes.index')).toBe(false)
+  await pane.unmount()
+
+  failing.get.clear()
+  expect((await savedMistakes(entries)).cards.map(c => c.id)).toEqual(['mistake-old'])
+  expect(entries.get('mistakes')).toEqual(old)
 })
