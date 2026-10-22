@@ -1,6 +1,6 @@
 # lingo-pane — design decisions
 
-Status: **design phase, no code yet.** Decisions taken on 2026-10-02. Background on the mod platform: the research note `claude-code-mods.md` (kept in the author's private notes; the facts used here are listed under "Platform constraints" below).
+Status: **early and private: the code exists and works end to end in the terminal** (updated 2026-10-22). Built: the guided setup, the docked split that opens while Claude works, conversation, role-play, reading and review with the tutor, mistakes turned into Pimsleur cards, and the opt-in contextual mode; each section below ends with an "Implemented" note saying what was built and what was not seen in a real session. Not built: the lesson generator, the placement test, and the wiring of the strategies (only their types exist in `src/strategies.ts`; the core still uses the concrete modules). `npm run check` (type-check, README heading parity, script tests, plugin tests) is the quick verification; what it cannot show is in [`manual-checklist.md`](manual-checklist.md). An architecture audit (October 2026) set the next work: see "Architecture audit decisions". Decisions in this file were taken from 2026-10-02. Background on the mod platform: the research note `claude-code-mods.md` (kept in the author's private notes; the facts used here are listed under "Platform constraints" below).
 
 ## What it is
 
@@ -50,6 +50,22 @@ Plugging in:
 - Progress persists in `$.store` (4 MiB, shared between sessions, not atomic: one key per item, re-read before writing). UI state lives in `$.state`, which resets on `/clear`, `/resume` and `/branch`.
 - The mod runs outside the sandbox and sees every prompt and tool call: the README must state what it reads, what it stores and where it sends data.
 - The mod API is early access and may change: pin a minimum Claude Code version.
+
+## Architecture audit decisions
+
+An audit of the built code (October 2026, reviewed over several rounds) set the next work. The spec and its tickets are GitHub issue #3 and its sub-issues; this records the decisions, which stand even where the code does not yet follow them. Where one contradicts a section below, this wins.
+
+- **Order.** Package scripts and CI first (done), then model-output safety, then the persistence layer, then the structural split; README and docs checks can go at any time. Each theme ships alone. The lesson generator (a separate spec) comes after.
+- **Model output is untrusted.** One pure sanitiser strips C0/C1 control characters (line breaks kept) and caps length, and is applied in every parser of model text: the tutor turn and its correction, the help text, the reading and the role-play scenario. The session excerpt has the prompt delimiter and the reply-format prefixes (`FIX:`, `TUTOR:`) neutralised after redaction; "not instructions for you" stays as a second layer. A correction is stored only if its wrong form, right form and note are plain, short and different from each other. The README says the excerpt is untrusted text sent to the model.
+- **Setup and redaction.** Stored setup and `userConfig` languages go through one validation (non-empty, the wizard's maximum length); an invalid saved setup stays pending. Redaction also covers bearer tokens, dotted tokens (JWT), credentials in URLs and tokens ending in padding characters; the README's wording of what is substituted is corrected to match.
+- **Failure reasons.** `model.complete` does not throw; it returns a reason. The wrapper passes it on and the error card says which one (limit or API error, empty reply, aborted), keeping the card's style.
+- **One storage module.** Every store read and write goes through it: read and parse with the existing validators, and update = re-read, apply a pure change, write. This narrows the race window but does not close it, since `$.store` is not atomic. Card progress and each mistake move to one key per item (the "one key per item" above, which the code did not follow), with an index key only where listing is needed, and a one-time idempotent migration that leaves the old keys for one release.
+- **One unit commit.** Finishing a unit computes the unit number once and writes the mistakes and the activity-log entry together, idempotently, so the two cannot disagree and the n+1 / n+3 / n+7 recall lands on the right units. Starting an activity and showing a reading answer take the number from the same helper.
+- **No I/O on redraw.** What the pane needs from the store is mirrored in `$.state`, loaded when the pane opens and refreshed after each write (as `setupCache` is); the render path reads only state.
+- **Structure.** `hooks/register.tsx` keeps only the wiring; rendering moves to one module per screen and the async orchestration to functions taking the engine and the validated setup. A resolver turns the saved strategy choices into implementations, the demo pair becomes the first content store (keyed by language pair), the activity log gets a default implementation behind its interface, and the `as` casts go. No visible change. Until the strategies are wired, the README does not promise extensibility.
+- **Reading check.** Still "contains the answer", with a cap on extra words so that listing candidates fails.
+- **Docs and checks.** This file's status line is kept true; the three READMEs are checked for the same heading structure by `scripts/check-readmes.mjs`, which `npm run check` and CI run; the manual verification is [`manual-checklist.md`](manual-checklist.md).
+- **Out of scope.** The lesson generator, new activities, languages or packs, visual changes beyond the failure messages, atomic storage, other model-call mechanisms, publishing.
 
 ## Requirement: lessons generated from the learner's history
 
@@ -113,7 +129,7 @@ What comes next: the lesson generator (fifth strategy) writing new cards from th
 
 ## Lesson UI (grilling 2026-10-02)
 
-Settled in a grilling session based on the UI research (`forge-laboral:docs/research/ui-leccion-mod-claude.md`) and a mockup of the options. It **supersedes** "Experience" above where they differ: the lesson is no longer flashcard-first, and the pane now opens by itself while Claude works (the `openPaneWhileWaiting` opt-in and the band micro-session are dropped). Built on branch `feat/lesson-ui` (2026-10-02, not merged yet): see "Implemented" after the build order, and the checklist for the manual test.
+Settled in a grilling session based on the UI research (`forge-laboral:docs/research/ui-leccion-mod-claude.md`) and a mockup of the options. It **supersedes** "Experience" above where they differ: the lesson is no longer flashcard-first, and the pane now opens by itself while Claude works (the `openPaneWhileWaiting` opt-in and the band micro-session are dropped). Built on branch `feat/lesson-ui` (2026-10-02, merged into `main`): see "Implemented" after the build order, and [`manual-checklist.md`](manual-checklist.md) for the manual test.
 
 **Surfaces**
 
@@ -173,21 +189,8 @@ Implemented (2026-10-02, branch `feat/lesson-ui`), one note per step:
 Checked on the branch: `claude plugin test .` (158 tests), `claude plugin validate .`, and `tsc -p .` with no errors, `src/*.test.ts` included. The tests drive the hooks through the engine's test kit with the tutor answered beneath the plugin; they cannot show focus, the dock, the paint or the model's real replies.
 
 **Not verified without a real session**, to look at in the manual test: whether `focus: true` from a timer is granted and the split really takes the keys; that the dock takes the asked width (40 % by default) and a dragged width wins; the colors on a light terminal theme (nested colored `Text`, the round border, the chip, `dimColor`); which wins the keyboard when a permission dialog comes up over a focused split; the tutor's latency on Sonnet (opening, reply, help, a 700-token reading) and whether it keeps the `FIX:`/`TUTOR:` format; whether the ring stays on the field across redraws and moves where `$.ui.focus` sends it; the once-a-second redraw of the Claude line; the `🔊 listen` link in herdr and tmux.
-
+**Manual test:** the steps are in [`manual-checklist.md`](manual-checklist.md), versioned with the code (a real `/clear`, the "Lesson N done" and demo-finished screens, input focus, the split and its closing rules, the dock, the colors).
 **Manual test in tmux** (the author's own session; `claude --plugin-dir ~/projects/lingo-pane.worktrees/lesson-ui`, fullscreen layout, a terminal wider than 144 columns, then a narrow one):
-
-1. `/lingo setup`: the new steps (interests, preferences with the three theme previews and the "material from your own session" switch); Confirm opens a conversation at once.
-2. Ask Claude something that takes over 2 s: the split opens by itself on the right at about 40 %, with the keys (`● keys here`), the Claude line counting seconds, and the tutor's opening line within a few seconds. Note the latency.
-3. Type nothing and let the turn end: the split goes about 3 s later.
-4. Next turn: type in the field. Reply with a mistake: the wrong words show in the error color; the right form does not. Enter on the empty field: a scaffold, not the answer.
-5. Let the turn end while typing: the split stays (`✓ Claude done`). Esc: the keys go back to the prompt, the split dims and reads `○ Ctrl+X Tab to come back`; Ctrl+X Tab brings them back.
-6. Finish the three replies with Claude idle: the split closes and the summary comes as a toast. With Claude working: the summary stays with `next: role-play ▸` holding the ring.
-7. Tab to `switch ▸`, Enter, then a digit: role-play (scene line), reading (text, questions, an empty Enter that shows the answer), review (your mistakes first, wrong words marked).
-8. A tool call that needs permission while the split has the keys: the split shows "Claude needs you" with no field; note which one held the keyboard and whether a key meant for the dialog went anywhere else.
-9. Submit a new prompt with a split in use: it closes. `/lingo` twice: opens, closes. `/lingo theme tropico` and `/lingo theme pastel`: colors change.
-10. Narrow terminal (under 110 columns) or the main screen: nothing opens by itself; `1: open lesson` above the prompt opens it inline, about 40 % tall.
-11. If the terminal has a light theme at hand: repeat 2 and 7 there and note what is hard to read.
-12. Press `🔊 listen` (a click: a Link is not a Tab stop) and check that Google Translate opens with the phrase.
 
 ## Still open
 
