@@ -54,7 +54,7 @@ import {
 import type { WaitEvent } from '../src/wait-machine'
 import { canSeatSplit, claudeStateLine, inlineRows, splitColumns } from '../src/split'
 import type { Viewport } from '../src/split'
-import type { LingoActivity, LingoLesson, LingoPractice, LingoReading, LingoSetup, LingoTutorState, LingoUnit, LingoUnitSummary } from '../types'
+import type { LingoActivity, LingoLesson, LingoPaneData, LingoPractice, LingoReading, LingoSetup, LingoTutorState, LingoUnit, LingoUnitSummary } from '../types'
 import {
   ACTIVITIES,
   activityLabel,
@@ -88,8 +88,8 @@ import {
 import type { TutorContext } from '../src/tutor'
 import { listenUrl } from '../src/listen'
 import { MAX_ANSWER_EXCERPT, MAX_PROMPT_EXCERPT, NO_CONTEXT, contextForTutor, excerpt } from '../src/context'
-import { ACTIVITY, MISTAKES, PROGRESS, SETUP, commitUnit, keepMistakes, load, modify, save } from '../src/storage'
-import type { FinishedUnit, Store } from '../src/storage'
+import { ACTIVITY, MISTAKES, SETUP, commitUnit, keepMistakes, load, modify, progressOf, save, tryLoad } from '../src/storage'
+import type { FinishedUnit, Store, UnitMistakes } from '../src/storage'
 import { generatedOpeningPrompt, parseScenario, pickScenario } from '../src/roleplay'
 import {
   READING_MAX_TOKENS,
@@ -124,8 +124,20 @@ const setupWizard = atom({ plugin: 'lingo-pane', key: 'setupWizard' } as const, 
 const setupCache = atom({ plugin: 'lingo-pane', key: 'setupCache' } as const, { isLoaded: false, setup: null })
 const setupBand = atom({ plugin: 'lingo-pane', key: 'setupBand' } as const, { isHidden: false })
 
+// The progress kept for the built-in pack's cards (one key per card).
+const PACK_PROGRESS = progressOf(DEMO_CARDS.map(c => c.id))
+
+// What the pane needs of the store: the activity log, and the progress and mistakes for the review.
+type PaneValues = Omit<LingoPaneData, 'isLoaded'>
+const NO_PANE_VALUES: PaneValues = { log: ACTIVITY.empty, progress: PACK_PROGRESS.empty, mistakes: MISTAKES.empty }
+
+// Those values, mirrored so the redraw every second while Claude works reads no
+// storage. Loaded when the pane opens and after each write; like `setupCache`,
+// `isLoaded` false (state reset by /clear, not yet reloaded) means "read the store".
+const paneData = atom({ plugin: 'lingo-pane', key: 'paneData' } as const, { isLoaded: false, ...NO_PANE_VALUES })
+
 // The practice session in the pane (contract: types/index.d.ts). Progress lives
-// in `$.store` under `progress`; this is only where the learner is right now.
+// in `$.store` (`progress.lesson` and `progress.card.<id>`); this is only where the learner is right now.
 const practice = atom({ plugin: 'lingo-pane', key: 'practice' } as const, IDLE_PRACTICE)
 
 // The lesson in the split: the activity on screen and its micro-unit (contract: types/index.d.ts).
@@ -149,6 +161,40 @@ async function currentSetup($: EngineInterface): Promise<LingoSetup | null> {
   return cache.isLoaded ? cache.setup : load(storeOf($), SETUP)
 }
 
+// The three values as the store holds them; null when it failed to give any of
+// them, so a store that is down is never taken for an empty one.
+async function loadPaneValues($: EngineInterface): Promise<PaneValues | null> {
+  const store = storeOf($)
+  const log = await tryLoad(store, ACTIVITY)
+  const progress = await tryLoad(store, PACK_PROGRESS)
+  const mistakes = await tryLoad(store, MISTAKES)
+  return log === null || progress === null || mistakes === null ? null : { log, progress, mistakes }
+}
+
+// Reads the three values again into the mirror: after a write (our own or one a
+// refresh finds from another session) and when the pane opens. When the store
+// fails the mirror stays as it was (not loaded, if it never was).
+async function refreshPaneData($: EngineInterface) {
+  const ticket = ++latestRefresh
+  const values = await loadPaneValues($)
+  // A refresh that began earlier and ends later than another has read older values: it is dropped.
+  if (values !== null && ticket === latestRefresh) await update($, paneData, () => ({ isLoaded: true, ...values }))
+}
+
+// The number of the refresh that began last. Handlers of different events overlap, so a refresh
+// that began before a write can end after the refresh that write asked for.
+let latestRefresh = 0
+
+// What the pane draws: the mirror once loaded. Not loaded (state reset by /clear,
+// not yet reloaded), the store is read, and nothing is mirrored: drawing is pure,
+// the engine denies a state write while a pane renders. The next `classic.SessionStart`
+// (it follows /clear, /resume and /branch) reloads the mirror. A store that fails
+// draws as if the values were empty.
+async function currentPaneData($: EngineInterface): Promise<PaneValues> {
+  const mirror = await read($, paneData)
+  return mirror.isLoaded ? mirror : ((await loadPaneValues($)) ?? NO_PANE_VALUES)
+}
+
 function dispatchWait($: EngineInterface, event: WaitEvent) {
   return update($, wait, s => transition(s, event))
 }
@@ -164,10 +210,11 @@ async function touch($: EngineInterface) {
   if (state.pane === 'open' && !state.isTouched) await dispatchWait($, { type: 'touched' })
 }
 
-// `$` cannot be handed to the storage module across an import: it gets the two calls.
+// `$` cannot be handed to the storage module across an import: it gets the calls.
 const storeOf = ($: EngineInterface): Store => ({
   get: key => $.store.get(key),
   set: (key, value) => $.store.set(key, value),
+  delete: key => $.store.delete(key),
 })
 
 const nowIso = async ($: EngineInterface) => new Date(await $.clock.now()).toISOString()
@@ -280,7 +327,8 @@ async function answerQuestion($: EngineInterface, value: string) {
   await update($, lesson, (l): LingoLesson => (l.reading?.id === before.id ? { ...l, reading: after } : l))
   if (isShown) {
     const card = { wrong: '', right: question.answer, note: before.title, sentence: question.question }
-    await keepMistakes(storeOf($), { corrections: [card], woven: [], lines: [] }, await nowIso($))
+    await keepCards($, { corrections: [card], woven: [], lines: [] })
+    await refreshPaneData($)
   }
   // Its cards were kept as the answers were shown: only the log is left to record.
   if (after.summary !== null) {
@@ -295,20 +343,23 @@ async function startReview($: EngineInterface) {
   if (session.lesson !== null && session.status !== 'done') return
   const queue = await reviewQueue($)
   if (queue.recall.length + queue.fresh.length === 0) return
-  const latest = await load(storeOf($), PROGRESS)
+  const latest = await load(storeOf($), PACK_PROGRESS)
   await update($, practice, () => startPractice(queue, latest.currentLesson))
   await focusKey($, 'answer-0')
 }
 
 // The review: the mistakes due at the next unit first, then the built-in pack's Pimsleur lesson.
-async function reviewQueue($: EngineInterface): Promise<LessonQueue> {
-  const log = await load(storeOf($), ACTIVITY)
-  const due = dueMistakes(await load(storeOf($), MISTAKES), nextUnit(log)).map(c => c.id)
-  const latest = await load(storeOf($), PROGRESS)
-  const pack = isFinished(latest, DEMO_LESSON_COUNT)
+function reviewQueueOf(data: PaneValues, now: Date): LessonQueue {
+  const due = dueMistakes(data.mistakes, nextUnit(data.log)).map(c => c.id)
+  const pack = isFinished(data.progress, DEMO_LESSON_COUNT)
     ? { recall: [], fresh: [] }
-    : buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
+    : buildQueue(DEMO_CARDS, data.progress, now)
   return { recall: [...due, ...pack.recall], fresh: pack.fresh }
+}
+
+// From the store, for a handler that is about to start a session. The pane draws it from the mirror.
+async function reviewQueue($: EngineInterface): Promise<LessonQueue> {
+  return reviewQueueOf((await loadPaneValues($)) ?? NO_PANE_VALUES, new Date(await $.clock.now()))
 }
 
 async function startActivity($: EngineInterface, setup: LingoSetup, activity: LingoActivity) {
@@ -317,7 +368,8 @@ async function startActivity($: EngineInterface, setup: LingoSetup, activity: Li
   // A talk unit left half done for another one closes here: its mistakes are kept.
   const left = (await read($, lesson)).unit
   if (left !== null && left.summary === null) {
-    await keepMistakes(storeOf($), left, await nowIso($))
+    await keepCards($, left)
+    await refreshPaneData($)
   }
   return openTalkUnit($, setup, activity)
 }
@@ -351,19 +403,40 @@ function finishedSummary(current: LingoLesson): { activity: LingoActivity; summa
   return { activity: current.unit.activity, summary: current.unit.summary }
 }
 
+// The mistakes of a unit that is not logged, kept as cards; the learner is told when the store would not take them.
+async function keepCards($: EngineInterface, unit: UnitMistakes) {
+  if (!(await keepMistakes(storeOf($), unit, await nowIso($)))) $.ui.toast(`${LABELS.modName}: ${LABELS.cardsNotSaved}`)
+}
+
 // A finished unit of any activity: recorded once (log and mistakes together); with
 // Claude idle, a split in use closes and says how it went, else the next activity is one press away.
+// What the store would not take is marked on the unit's summary, so the toast, the pane and the
+// toast when the turn ends all say so instead of claiming it was saved.
 async function finishActivity($: EngineInterface, unit: FinishedUnit) {
   const committed = await commitUnit(storeOf($), unit, await nowIso($))
+  await refreshPaneData($)
   // Already recorded (a repeated event): the learner has been told.
   if (committed !== null && !committed.isRecorded) return
+  const notSaved = committed === null ? 'unit' : committed.areMistakesKept ? undefined : 'cards'
+  const summary: LingoUnitSummary = notSaved === undefined ? unit.summary : { ...unit.summary, notSaved }
+  if (notSaved !== undefined) await markNotSaved($, unit.id, summary)
   const state = await read($, wait)
   if (!isClaudeWorking(state) && isKeptOpen(state)) {
     await closeSplit($)
-    $.ui.toast(`${LABELS.modName}: ${summaryText(unit.summary, unit.activity)}`)
+    $.ui.toast(`${LABELS.modName}: ${summaryText(summary, unit.activity)}`)
     return
   }
+  if (notSaved !== undefined) $.ui.toast(`${LABELS.modName}: ${summaryText(summary, unit.activity)}`)
   await focusKey($, 'next-unit')
+}
+
+// The summary of the unit or reading on screen, with what the store would not take.
+function markNotSaved($: EngineInterface, id: string, summary: LingoUnitSummary) {
+  return update($, lesson, (l): LingoLesson => {
+    if (l.unit?.id === id) return { ...l, unit: { ...l.unit, summary } }
+    if (l.reading?.id === id) return { ...l, reading: { ...l.reading, summary } }
+    return l
+  })
 }
 
 // A finished talk unit: its mistakes become cards, numbered by it.
@@ -452,6 +525,7 @@ export const register: Register = (on, options) => {
     // Load what is saved into the mirror; a missing or unreadable value is pending.
     const setup = await load(storeOf($), SETUP)
     await update($, setupCache, () => ({ isLoaded: true, setup }))
+    await refreshPaneData($)
     if (setup === null) $.ui.toast(LABELS.setupPendingToast)
 
     return next(e)
@@ -465,6 +539,7 @@ export const register: Register = (on, options) => {
 
     const setup = await load(storeOf($), SETUP)
     await update($, setupCache, () => ({ isLoaded: true, setup }))
+    await refreshPaneData($)
     if (setup === null) $.ui.toast(LABELS.setupPendingToast)
 
     return next(e)
@@ -503,6 +578,7 @@ export const register: Register = (on, options) => {
     }
 
     // Asked by the person, so it is placed at any width (docked from 110 columns in fullscreen).
+    await refreshPaneData($)
     const opened = await $.ui.open(openArgs(setup, e.presentation?.columns))
     if (opened.isPlaced) await dispatchWait($, { type: 'pane-placed', opener: 'person' })
     // Straight into the unfinished activity or the suggested one.
@@ -521,7 +597,11 @@ export const register: Register = (on, options) => {
 
     ticker?.cancel()
     ticker = $.clock.every(1000, async () => {
-      if ((await read($, wait)).pane === 'open') $.ui.invalidate('ui.render')
+      if ((await read($, wait)).pane !== 'open') return
+      // A mirror the store would not give (it failed when the pane opened) is tried again here: a handler may
+      // write state, a render may not.
+      if (!(await read($, paneData)).isLoaded) await refreshPaneData($)
+      $.ui.invalidate('ui.render')
     })
 
     const turnId = e.turnId
@@ -550,6 +630,7 @@ export const register: Register = (on, options) => {
       }
 
       // Unasked, the engine seats it from 144 columns (110 once the person opened it).
+      await refreshPaneData($)
       const opened = await $.ui.open(openArgs(setup))
       if (opened.isPlaced) {
         await dispatchWait($, { type: 'pane-placed', opener: 'mod' })
@@ -732,6 +813,7 @@ export const register: Register = (on, options) => {
               onPress={async () => {
                 await dispatchWait($, { type: 'offer-taken' })
                 // Opened by a press: placed at any width, inline when it cannot dock.
+                await refreshPaneData($)
                 const opened = await $.ui.open(openArgs(setup))
                 if (opened.isPlaced) await dispatchWait($, { type: 'pane-placed', opener: 'person' })
                 if (setup !== null) await ensureLesson($, setup)
@@ -1116,7 +1198,7 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const log = await load(storeOf($), ACTIVITY)
+    const { log } = await currentPaneData($)
     const suggested = suggestActivity(log, AVAILABLE_ACTIVITIES)
     const nextButton = (
       <Button
@@ -1349,8 +1431,8 @@ export const register: Register = (on, options) => {
     async function drawReview() {
       const learner = setup as LingoSetup
       const session = await read($, practice)
-      const progress = await load(storeOf($), PROGRESS)
-      const mistakes = await load(storeOf($), MISTAKES)
+      const data = await currentPaneData($)
+      const { progress, mistakes } = data
       const mistakeOf = (id: string | undefined) => mistakes.cards.find(c => c.id === id)
       const cardOf = (id: string | undefined) => {
         const mistake = mistakeOf(id)
@@ -1362,7 +1444,7 @@ export const register: Register = (on, options) => {
 
       const start = async () => {
         await touch($)
-        const latest = await load(storeOf($), PROGRESS)
+        const latest = await load(storeOf($), PACK_PROGRESS)
         const queue = await reviewQueue($)
         await update($, practice, () => startPractice(queue, latest.currentLesson))
         await focusKey($, 'answer-0')
@@ -1371,11 +1453,12 @@ export const register: Register = (on, options) => {
       // Every attempt is recorded: a mistake card's in the mistakes, a pack card's in the progress.
       const record = async (cardId: string, isCorrect: boolean) => {
         const at = await nowIso($)
-        if (mistakeOf(cardId) !== undefined) {
-          await modify(storeOf($), MISTAKES, latest => recordMistakeReview(latest, cardId, at, isCorrect))
-          return
-        }
-        await modify(storeOf($), PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
+        const saved =
+          mistakeOf(cardId) !== undefined
+            ? await modify(storeOf($), MISTAKES, latest => recordMistakeReview(latest, cardId, at, isCorrect))
+            : await modify(storeOf($), PACK_PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
+        if (saved === null) $.ui.toast(`${LABELS.modName}: ${LABELS.progressNotSaved}`)
+        await refreshPaneData($)
       }
 
       const showAnswer = async () => {
@@ -1407,9 +1490,11 @@ export const register: Register = (on, options) => {
         const advanced = nextCard(latest)
         if (advanced.status === 'done') {
           // Finishing the lesson being studied moves the learner on, once.
-          await modify(storeOf($), PROGRESS, stored =>
+          const moved = await modify(storeOf($), PACK_PROGRESS, stored =>
             latest.lesson === stored.currentLesson ? advanceLesson(stored, DEMO_LESSON_COUNT) : stored,
           )
+          if (moved === null) $.ui.toast(`${LABELS.modName}: ${LABELS.progressNotSaved}`)
+          await refreshPaneData($)
         }
         await update($, practice, () => advanced)
         // The button that was pressed holds the ring: hand it to the new field.
@@ -1454,7 +1539,7 @@ export const register: Register = (on, options) => {
 
       if (session.lesson === null) {
         const finished = isFinished(progress, DEMO_LESSON_COUNT)
-        const queue = await reviewQueue($)
+        const queue = reviewQueueOf(data, new Date(await $.clock.now()))
         const isEmpty = queue.recall.length + queue.fresh.length === 0
         return (
           <Box flexDirection="column" marginTop={1}>

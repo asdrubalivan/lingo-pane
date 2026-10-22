@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
+import { savedMistakes, savedProgress } from '../src/memory-store'
+
 // Mistakes become cards: kept when a unit closes (numbered by the unit), woven
 // into the conversations where they fall due (Pimsleur by unit), carried by the
 // Spinner, and first in `review`.
@@ -78,11 +80,11 @@ test('a closed unit keeps its corrections as cards, numbered by the unit', async
   const pane = await mountPane($)
   await pane.input({ key: 'reply', text: 'Yesterday I go to the beach.' })
   // Not before the unit closes.
-  expect(entries.get('mistakes')).toBeUndefined()
+  expect((await savedMistakes(entries)).cards).toEqual([])
   await pane.input({ key: 'reply', text: 'Yesterday I went to the beach.' })
   await pane.input({ key: 'reply', text: 'It was sunny.' })
 
-  const saved = entries.get('mistakes') as { cards: Record<string, unknown>[] }
+  const saved = await savedMistakes(entries)
   expect(saved.cards).toEqual([
     expect.objectContaining({ wrong: 'go', right: 'went', note: 'pasado', sentence: 'Yesterday I go to the beach.', unit: 1, reviews: [] }),
   ])
@@ -97,7 +99,7 @@ test('a due mistake is woven into the next conversation and counts as reviewed w
 
   const pane = await mountPane($)
   for (const line of ['I went to the park.', 'It was fun.', 'Yes.']) await pane.input({ key: 'reply', text: line })
-  const saved = entries.get('mistakes') as { cards: { id: string; reviews: { isCorrect: boolean }[] }[] }
+  const saved = await savedMistakes(entries)
   expect(saved.cards.find(c => c.id === 'mistake-go')?.reviews.map(r => r.isCorrect)).toEqual([true])
   await pane.unmount()
 })
@@ -124,10 +126,10 @@ test('review: due mistakes come first, as the learner\'s own line with the wrong
   await pane.input({ key: 'answer-0', text: 'Went' })
   expect(await pane.find({ type: 'Text', text: 'Correct: went' })).toBeDefined()
 
-  const saved = entries.get('mistakes') as { cards: { reviews: { isCorrect: boolean }[] }[] }
+  const saved = await savedMistakes(entries)
   expect(saved.cards[0]?.reviews.map(r => r.isCorrect)).toEqual([true])
   // The pack's progress does not get the mistake's attempt.
-  expect((entries.get('progress') as { cards: Record<string, unknown> } | undefined)?.cards?.['mistake-go']).toBeUndefined()
+  expect((await savedProgress(entries, ['mistake-go'])).cards['mistake-go']).toBeUndefined()
 
   // Then the pack's lesson goes on as before.
   await pane.press({ key: 'next' })

@@ -58,21 +58,31 @@ export function tutorPrompt(card: Card, failed: string, targetLanguage: string, 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** Whatever `$.store` held under `progress`, as progress; a fresh one when it is not valid. */
+/** The lesson number a stored value holds; null when it is not a whole number from 1. */
+export function parseLessonNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 ? value : null
+}
+
+/** One card's stored progress (its attempts, the last ones kept); null when it is not valid. */
+export function parseCardProgress(raw: unknown): LingoProgress['cards'][string] | null {
+  if (!isObject(raw) || !Array.isArray(raw.reviews)) return null
+  const reviews = raw.reviews
+    .filter(isObject)
+    .filter(r => typeof r.at === 'string' && typeof r.isCorrect === 'boolean')
+    .map(r => ({ at: r.at as string, isCorrect: r.isCorrect as boolean }))
+  return { reviews: reviews.slice(-MAX_REVIEWS_PER_CARD) }
+}
+
+/** Whatever `$.store` held under `progress` (the layout before one key per card); a fresh one when it is not valid. */
 export function parseProgress(raw: unknown): LingoProgress {
   if (!isObject(raw) || raw.version !== PROGRESS_VERSION) return FRESH_PROGRESS
-  const { currentLesson, cards } = raw
-  if (typeof currentLesson !== 'number' || !Number.isInteger(currentLesson) || currentLesson < 1) return FRESH_PROGRESS
-  if (!isObject(cards)) return FRESH_PROGRESS
+  const currentLesson = parseLessonNumber(raw.currentLesson)
+  if (currentLesson === null || !isObject(raw.cards)) return FRESH_PROGRESS
 
   const clean: LingoProgress['cards'] = {}
-  for (const [id, entry] of Object.entries(cards)) {
-    if (!isObject(entry) || !Array.isArray(entry.reviews)) continue
-    const reviews = entry.reviews
-      .filter(isObject)
-      .filter(r => typeof r.at === 'string' && typeof r.isCorrect === 'boolean')
-      .map(r => ({ at: r.at as string, isCorrect: r.isCorrect as boolean }))
-    clean[id] = { reviews: reviews.slice(-MAX_REVIEWS_PER_CARD) }
+  for (const [id, entry] of Object.entries(raw.cards)) {
+    const card = parseCardProgress(entry)
+    if (card !== null) clean[id] = card
   }
   return { version: PROGRESS_VERSION, currentLesson, cards: clean }
 }

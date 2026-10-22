@@ -123,7 +123,7 @@ export type LingoSetupCache = { isLoaded: boolean; setup: LingoSetup | null }
 /** "Later" on the band: hides it for the rest of this session. */
 export type LingoSetupBand = { isHidden: boolean }
 
-/** What the practice session saves in `$.store` under the key `progress` (JSON). */
+/** What the practice session saves in `$.store` under `progress.lesson` and `progress.card.<id>` (JSON; see src/storage.ts). */
 export type LingoProgress = {
   version: 1
   /** Lesson being studied (1-based); one past the last lesson once the pack is finished. */
@@ -184,8 +184,12 @@ export type LingoCorrection = {
 /** What the split is waiting on the tutor for. */
 export type LingoPending = 'opening' | 'reply' | 'help'
 
-/** How a micro-unit went: `✓ 3 sentences, 1 correction saved`. */
-export type LingoUnitSummary = { sentences: number; corrections: number }
+/**
+ * How a micro-unit went: `✓ 3 sentences, 1 correction saved`. `notSaved` is set
+ * when the store would not take the unit (`'unit'`) or only its mistake cards
+ * (`'cards'`), so nothing on screen claims they were saved.
+ */
+export type LingoUnitSummary = { sentences: number; corrections: number; notSaved?: 'unit' | 'cards' }
 
 /** A role-play's setting: from the fixed A1-C2 list (`id`) or made up from the learner's interests (`id` null). */
 export type LingoScenario = {
@@ -280,8 +284,16 @@ export type LingoMistakeCard = {
   reviews: { at: string; isCorrect: boolean }[]
 }
 
-/** What the mod saves in `$.store` under `mistakes`. */
+/** What the mod saves in `$.store`, one key per card (`mistakes.card.<id>` and `mistakes.index`). */
 export type LingoMistakes = { version: 1; cards: LingoMistakeCard[] }
+
+/**
+ * What the pane draws from the store, mirrored in `$.state` so that a redraw
+ * (once a second while Claude works) reads no storage: loaded when the pane
+ * opens and after every write. `$.state` resets on /clear: `isLoaded` false
+ * then means "read `$.store`", as for the setup.
+ */
+export type LingoPaneData = { isLoaded: boolean; log: LingoActivityLog; progress: LingoProgress; mistakes: LingoMistakes }
 
 /** The contextual mode's material: the learner's last prompt and Claude's last reply, cut short and redacted. Empty unless opted in. */
 export type LingoWorkContext = { prompt: string | null; answer: string | null }
@@ -296,6 +308,7 @@ declare module 'claude-code' {
       setupWizard: LingoSetupWizard
       setupCache: LingoSetupCache
       setupBand: LingoSetupBand
+      paneData: LingoPaneData
       practice: LingoPractice
       lesson: LingoLesson
       spinnerCard: LingoSpinnerCard
