@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import { DEMO_CARDS } from '../src/content/demo-english-a1'
+import { savedProgress } from '../src/memory-store'
 import type { Card } from '../src/strategies'
 
 const SAVED = {
@@ -82,7 +83,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await pane.find({ type: 'Text', text: `Answer: ${second.answer}` })).toBeDefined()
     await pane.press({ key: 'next' })
 
-    const progress = entries.get('progress') as { currentLesson: number; cards: Record<string, { reviews: { isCorrect: boolean }[] }> }
+    const progress = await savedProgress(entries, DEMO_CARDS.map(c => c.id))
     expect(progress.currentLesson).toBe(1)
     expect(progress.cards[first.id]?.reviews.map(r => r.isCorrect)).toEqual([false, true])
     expect(progress.cards[second.id]?.reviews.map(r => r.isCorrect)).toEqual([false])
@@ -100,7 +101,7 @@ test('finishing the lesson says so and moves to lesson 2, whose recall block is 
     await pane.press({ key: 'next' })
   }
   expect(await pane.find({ type: 'Text', text: 'Lesson 1 done' })).toBeDefined()
-  expect((entries.get('progress') as { currentLesson: number }).currentLesson).toBe(2)
+  expect((await savedProgress(entries, [])).currentLesson).toBe(2)
 
   await pane.press({ key: 'continue' })
   expect(await pane.find({ type: 'Text', text: /Lesson 2 of 6: 5 to recall, 5 new/ })).toBeDefined()
@@ -123,6 +124,42 @@ test('corrupt progress starts at lesson 1', async ($, on) => {
   const pane = await mountPane($, 'terminal')
   await toReview(pane)
   expect(await pane.find({ type: 'Text', text: /Lesson 1 - card 1 of 5/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('a learner with the old progress key carries on: the history moves to the new layout and grows there', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const old = { version: 1, currentLesson: 2, cards: { 'en-a1-01-01': { reviews: [{ at: '2026-10-01T10:00:00.000Z', isCorrect: true }] } } }
+  const entries = memoryStore(on, { setup: SAVED, progress: old })
+  const pane = await mountPane($, 'terminal')
+  await toReview(pane)
+  expect(await pane.find({ type: 'Text', text: /Lesson 2 - card 1 of/ })).toBeDefined()
+  await pane.input({ key: 'answer-0', text: '' })
+
+  const progress = await savedProgress(entries, DEMO_CARDS.map(c => c.id))
+  expect(progress.currentLesson).toBe(2)
+  expect(progress.cards['en-a1-01-01']?.reviews[0]).toEqual({ at: '2026-10-01T10:00:00.000Z', isCorrect: true })
+  expect(Object.values(progress.cards).flatMap(c => c.reviews)).toHaveLength(2)
+  // The old key is left as it was for one release.
+  expect(entries.get('progress')).toEqual(old)
+  await pane.unmount()
+})
+
+test('another session answering a different card meanwhile loses no attempts', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const entries = memoryStore(on, { setup: SAVED })
+  const elsewhere = DEMO_CARDS.find(c => c.lesson === 3) as Card
+  const pane = await mountPane($, 'terminal')
+  await toReview(pane)
+  await pane.input({ key: 'answer-0', text: '' })
+  // The other terminal answers a card of its own between two answers here.
+  entries.set(`progress.card.${elsewhere.id}`, { version: 1, reviews: [{ at: '2026-10-02T11:00:00.000Z', isCorrect: true }] })
+  await pane.press({ key: 'next' })
+  await pane.input({ key: 'answer-1', text: '' })
+
+  const progress = await savedProgress(entries, DEMO_CARDS.map(c => c.id))
+  expect(Object.keys(progress.cards).sort()).toEqual(['en-a1-01-01', 'en-a1-01-02', elsewhere.id].sort())
+  expect(progress.cards[elsewhere.id]?.reviews).toEqual([{ at: '2026-10-02T11:00:00.000Z', isCorrect: true }])
   await pane.unmount()
 })
 

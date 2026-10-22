@@ -123,7 +123,7 @@ export type LingoSetupCache = { isLoaded: boolean; setup: LingoSetup | null }
 /** "Later" on the band: hides it for the rest of this session. */
 export type LingoSetupBand = { isHidden: boolean }
 
-/** What the practice session saves in `$.store` under the key `progress` (JSON). */
+/** What the practice session saves in `$.store` under `progress.lesson` and `progress.card.<id>` (JSON; see src/storage.ts). */
 export type LingoProgress = {
   version: 1
   /** Lesson being studied (1-based); one past the last lesson once the pack is finished. */
@@ -280,7 +280,7 @@ export type LingoMistakeCard = {
   reviews: { at: string; isCorrect: boolean }[]
 }
 
-/** What the mod saves in `$.store` under `mistakes`. */
+/** What the mod saves in `$.store`, one key per card (`mistakes.card.<id>` and `mistakes.index`). */
 export type LingoMistakes = { version: 1; cards: LingoMistakeCard[] }
 
 /** The contextual mode's material: the learner's last prompt and Claude's last reply, cut short and redacted. Empty unless opted in. */
