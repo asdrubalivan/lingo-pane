@@ -107,7 +107,7 @@ test('a store that cannot be read still opens the conversation', async ($, on) =
   await pane.unmount()
 })
 
-test('a store that cannot be written does not break the unit: it closes and says how it went', async ($, on) => {
+test('a store that cannot be written does not break the unit: it closes and says it was not saved', async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   const { entries, failing, toasts } = world(on)
   failing.set.add('activity')
@@ -115,9 +115,36 @@ test('a store that cannot be written does not break the unit: it closes and says
   await openWithCommand($)
   const pane = await mountPane($)
   await finishUnit(pane)
-  expect(toasts.at(-1)).toBe('lingo-pane: ✓ 3 sentences, 1 correction saved')
+  expect(toasts.at(-1)).toBe('lingo-pane: this unit could not be saved (storage failed), so it does not count.')
   expect(entries.has('activity')).toBe(false)
   expect(entries.has('mistakes.index')).toBe(false)
+  await pane.unmount()
+})
+
+test('a unit whose cards cannot be written is counted, and says the cards were not kept', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { entries, failing, toasts } = world(on)
+  failing.set.add('mistakes.index')
+  await openWithCommand($)
+  const pane = await mountPane($)
+  await finishUnit(pane)
+  expect(toasts.at(-1)).toBe('lingo-pane: the mistake cards could not be saved (storage failed).')
+  expect(entries.get('activity')).toMatchObject({ units: 1 })
+  await pane.unmount()
+})
+
+test('a store that never takes the move marker still saves the unit and its cards', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const old = { version: 1, cards: [{ id: 'mistake-old', wrong: 'is', right: 'are', note: 'plural', sentence: 'They is here.', unit: 1, createdAt: '2026-10-01T10:00:00.000Z', reviews: [] }] }
+  const { entries, failing, toasts } = world(on, { mistakes: old })
+  failing.set.add('storage.layout')
+  await openWithCommand($)
+  const pane = await mountPane($)
+  await finishUnit(pane)
+  expect(toasts.at(-1)).toBe('lingo-pane: ✓ 3 sentences, 1 correction saved')
+  expect(entries.get('activity')).toMatchObject({ units: 1 })
+  expect((await savedMistakes(entries)).cards.map(c => c.id)).toContain('mistake-old')
+  expect((await savedMistakes(entries)).cards).toHaveLength(2)
   await pane.unmount()
 })
 
@@ -129,7 +156,7 @@ test('a store that cannot move the old layout leaves it alone, the unit still cl
   await openWithCommand($)
   const pane = await mountPane($)
   await finishUnit(pane)
-  expect(toasts.at(-1)).toBe('lingo-pane: ✓ 3 sentences, 1 correction saved')
+  expect(toasts.at(-1)).toBe('lingo-pane: the mistake cards could not be saved (storage failed).')
   expect(entries.get('mistakes')).toEqual(old)
   expect(entries.has('storage.layout')).toBe(false)
   expect(entries.has('mistakes.index')).toBe(false)

@@ -123,6 +123,8 @@ export const LABELS = {
   reviewCorrect: (answer: string) => `Correct: ${answer}`,
   reviewAnswer: (answer: string) => `Answer: ${answer}`,
   hintUnavailable: (why: string) => `${why} Use the hint above or try again.`,
+  unitNotSaved: 'this unit could not be saved (storage failed), so it does not count.',
+  cardsNotSaved: 'the mistake cards could not be saved (storage failed).',
   hintLeaked: 'The tutor reply would have given the answer away, so it was dropped. Try again or look at the hint.',
 
   // --- Band above the prompt -----------------------------------------------------

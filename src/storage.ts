@@ -15,7 +15,9 @@
 //   mistakes.index            { version, ids }              (oldest first; review needs the list)
 //   mistakes.card.<id>        { version, ...card }
 //   storage.layout            marks the move from the old `progress` and `mistakes` keys as done
-// The old whole-object keys stay as they were for one release.
+// The old whole-object keys stay as they were for one release. Until the move is
+// marked done, a read joins both layouts item by item (what the new layout holds
+// wins), so a move that cannot finish never stops a change from being saved.
 
 import { nextUnit, parseActivityLog, recordUnit, ACTIVITY_STORE_KEY } from './activities'
 import { FRESH_PROGRESS, PROGRESS_STORE_KEY, PROGRESS_VERSION, parseCardProgress, parseLessonNumber, parseProgress } from './lesson'
@@ -52,14 +54,12 @@ export type Store = {
 /**
  * A value kept in the store and how to move it in and out. `read` throws when
  * the store fails; `write` gets what `read` gave and the changed value and
- * writes only the difference. `stale` is what to show while the old layout has
- * not been moved (see `migrate`).
+ * writes only the difference.
  */
 export type Entry<T> = {
   empty: T
   read: (store: Store) => Promise<T>
   write: (store: Store, before: T, after: T) => Promise<void>
-  stale?: (store: Store) => Promise<T>
 }
 
 /** An entry that is one value under one key; `parse` takes anything and always answers. */
@@ -131,7 +131,7 @@ async function moveMistakes(store: Store) {
  * once: the marker is written last, so a move that failed half way is simply
  * made again (it only adds what is missing). The old keys are left as they are.
  * False when the store failed and the move is not done; nothing is lost then,
- * because the old keys are still there and entries keep showing them.
+ * because the old keys are still there and reads join them with the new ones.
  */
 export async function migrate(store: Store): Promise<boolean> {
   try {
@@ -145,13 +145,6 @@ export async function migrate(store: Store): Promise<boolean> {
   }
 }
 
-/** Thrown by an entry's `read` while the old layout could not be moved; `load` then answers from the old keys, `modify` writes nothing. */
-class NotMigrated extends Error {}
-
-async function ensureMigrated(store: Store) {
-  if (!(await migrate(store))) throw new NotMigrated()
-}
-
 /**
  * The progress of the cards whose ids are given (the built-in pack's): the
  * lesson and each card under its own key. A change writes the cards whose
@@ -160,21 +153,22 @@ async function ensureMigrated(store: Store) {
 export function progressOf(cardIds: readonly string[]): Entry<LingoProgress> {
   return {
     empty: FRESH_PROGRESS,
-    stale: async store => parseProgress(await store.get(PROGRESS_STORE_KEY)),
     read: async store => {
-      await ensureMigrated(store)
+      const isMoved = await migrate(store)
       const [lesson, ...stored] = await Promise.all([
         store.get(PROGRESS_LESSON_KEY),
         ...cardIds.map(id => store.get(progressCardKey(id))),
       ])
+      // Not moved yet: what the new layout lacks is read from the old key (which must be readable).
+      const old = isMoved ? FRESH_PROGRESS : parseProgress(await store.get(PROGRESS_STORE_KEY))
       const cards: LingoProgress['cards'] = {}
       cardIds.forEach((id, i) => {
         const item = versioned(stored[i], PROGRESS_VERSION)
-        const card = item === null ? null : parseCardProgress(item)
-        if (card !== null) cards[id] = card
+        const card = (item === null ? null : parseCardProgress(item)) ?? old.cards[id]
+        if (card !== undefined) cards[id] = card
       })
       const item = versioned(lesson, PROGRESS_VERSION)
-      const currentLesson = (item === null ? null : parseLessonNumber(item.currentLesson)) ?? FRESH_PROGRESS.currentLesson
+      const currentLesson = (item === null ? null : parseLessonNumber(item.currentLesson)) ?? old.currentLesson
       return { version: PROGRESS_VERSION, currentLesson, cards }
     },
     write: async (store, before, after) => {
@@ -197,15 +191,18 @@ export function progressOf(cardIds: readonly string[]): Entry<LingoProgress> {
  */
 export const MISTAKES: Entry<LingoMistakes> = {
   empty: NO_MISTAKES,
-  stale: async store => parseMistakes(await store.get(MISTAKES_STORE_KEY)),
   read: async store => {
-    await ensureMigrated(store)
-    const ids = parseIndex(await store.get(MISTAKES_INDEX_KEY))
+    const isMoved = await migrate(store)
+    const raw = await store.get(MISTAKES_INDEX_KEY)
+    // Not moved yet: the old key (which must be readable) lists what the new layout does not list yet.
+    const old = isMoved ? NO_MISTAKES : parseMistakes(await store.get(MISTAKES_STORE_KEY))
+    const ids = versioned(raw, MISTAKES_VERSION) === null && !isMoved ? old.cards.map(c => c.id) : parseIndex(raw)
+    const oldCards = new Map(old.cards.map(c => [c.id, c]))
     const stored = await Promise.all(ids.map(id => store.get(mistakeKey(id))))
-    const cards = stored.flatMap((raw, i) => {
-      const item = versioned(raw, MISTAKES_VERSION)
-      const card = item === null ? null : parseMistakeCard(item)
-      return card !== null && card.id === ids[i] ? [card] : []
+    const cards = stored.flatMap((value, i) => {
+      const item = versioned(value, MISTAKES_VERSION)
+      const card = (item === null ? null : parseMistakeCard(item)) ?? oldCards.get(ids[i] as string)
+      return card !== undefined && card.id === ids[i] ? [card] : []
     })
     return { version: MISTAKES_VERSION, cards }
   },
@@ -232,14 +229,7 @@ export const MISTAKES: Entry<LingoMistakes> = {
 export async function load<T>(store: Store, entry: Entry<T>): Promise<T> {
   try {
     return await entry.read(store)
-  } catch (error) {
-    if (error instanceof NotMigrated && entry.stale !== undefined) {
-      try {
-        return await entry.stale(store)
-      } catch {
-        return entry.empty
-      }
-    }
+  } catch {
     return entry.empty
   }
 }
@@ -284,10 +274,10 @@ export type UnitMistakes = {
 /** A finished unit of any activity. A reading has no lines and keeps its cards as the answers are shown. */
 export type FinishedUnit = UnitMistakes & { id: string; activity: LingoActivity; summary: LingoUnitSummary }
 
-// The unit's corrections as cards numbered `unitNumber`, and the woven ones counted as reviewed.
-function saveMistakes(store: Store, unit: UnitMistakes, unitNumber: number, at: string) {
-  if (unit.corrections.length === 0 && unit.woven.length === 0) return Promise.resolve(null)
-  return modify(store, MISTAKES, mistakes => {
+// The unit's corrections as cards numbered `unitNumber`, and the woven ones counted as reviewed. False when the store failed.
+async function saveMistakes(store: Store, unit: UnitMistakes, unitNumber: number, at: string): Promise<boolean> {
+  if (unit.corrections.length === 0 && unit.woven.length === 0) return true
+  const saved = await modify(store, MISTAKES, mistakes => {
     let changed = mistakes
     for (const card of unit.woven) {
       const outcome = wovenOutcome(unit.lines, card)
@@ -295,6 +285,7 @@ function saveMistakes(store: Store, unit: UnitMistakes, unitNumber: number, at: 
     }
     return addCorrections(changed, unit.corrections, unitNumber, at)
   })
+  return saved !== null
 }
 
 /**
@@ -304,26 +295,27 @@ function saveMistakes(store: Store, unit: UnitMistakes, unitNumber: number, at: 
  * n+1, n+3 and n+7 lands on the right units. A unit whose id is already in the
  * log is left alone. The log goes first: if the store fails after it the cards
  * of that unit are lost, but a retry never counts the unit twice. Null when the
- * log could not be written (nothing was recorded).
+ * log could not be written (nothing was recorded); `areMistakesKept` is false
+ * when the cards could not be, so the caller can say so.
  */
 export async function commitUnit(
   store: Store,
   unit: FinishedUnit,
   at: string,
-): Promise<{ isRecorded: boolean; log: LingoActivityLog } | null> {
+): Promise<{ isRecorded: boolean; areMistakesKept: boolean; log: LingoActivityLog } | null> {
   const logged = await modify(store, ACTIVITY, log =>
     log.recent.some(r => r.id === unit.id) ? log : recordUnit(log, unit.activity, unit.summary, at, unit.id),
   )
   if (logged === null) return null
   const isRecorded = logged.after !== logged.before
-  if (isRecorded) await saveMistakes(store, unit, logged.after.units, at)
-  return { isRecorded, log: logged.after }
+  const areMistakesKept = isRecorded ? await saveMistakes(store, unit, logged.after.units, at) : true
+  return { isRecorded, areMistakesKept, log: logged.after }
 }
 
 /**
  * The mistakes of a unit that is not logged (left half done for another one, or
  * a reading's answer that was shown), numbered by the unit that comes next.
  */
-export async function keepMistakes(store: Store, unit: UnitMistakes, at: string): Promise<void> {
-  await saveMistakes(store, unit, nextUnit(await load(store, ACTIVITY)), at)
+export function keepMistakes(store: Store, unit: UnitMistakes, at: string): Promise<boolean> {
+  return load(store, ACTIVITY).then(log => saveMistakes(store, unit, nextUnit(log), at))
 }

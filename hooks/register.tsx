@@ -89,7 +89,7 @@ import type { TutorContext } from '../src/tutor'
 import { listenUrl } from '../src/listen'
 import { MAX_ANSWER_EXCERPT, MAX_PROMPT_EXCERPT, NO_CONTEXT, contextForTutor, excerpt } from '../src/context'
 import { ACTIVITY, MISTAKES, SETUP, commitUnit, keepMistakes, load, modify, progressOf, save } from '../src/storage'
-import type { FinishedUnit, Store } from '../src/storage'
+import type { FinishedUnit, Store, UnitMistakes } from '../src/storage'
 import { generatedOpeningPrompt, parseScenario, pickScenario } from '../src/roleplay'
 import {
   READING_MAX_TOKENS,
@@ -311,7 +311,7 @@ async function answerQuestion($: EngineInterface, value: string) {
   await update($, lesson, (l): LingoLesson => (l.reading?.id === before.id ? { ...l, reading: after } : l))
   if (isShown) {
     const card = { wrong: '', right: question.answer, note: before.title, sentence: question.question }
-    await keepMistakes(storeOf($), { corrections: [card], woven: [], lines: [] }, await nowIso($))
+    await keepCards($, { corrections: [card], woven: [], lines: [] })
     await refreshPaneData($)
   }
   // Its cards were kept as the answers were shown: only the log is left to record.
@@ -354,7 +354,7 @@ async function startActivity($: EngineInterface, setup: LingoSetup, activity: Li
   // A talk unit left half done for another one closes here: its mistakes are kept.
   const left = (await read($, lesson)).unit
   if (left !== null && left.summary === null) {
-    await keepMistakes(storeOf($), left, await nowIso($))
+    await keepCards($, left)
     await refreshPaneData($)
   }
   return openTalkUnit($, setup, activity)
@@ -389,19 +389,27 @@ function finishedSummary(current: LingoLesson): { activity: LingoActivity; summa
   return { activity: current.unit.activity, summary: current.unit.summary }
 }
 
+// The mistakes of a unit that is not logged, kept as cards; the learner is told when the store would not take them.
+async function keepCards($: EngineInterface, unit: UnitMistakes) {
+  if (!(await keepMistakes(storeOf($), unit, await nowIso($)))) $.ui.toast(`${LABELS.modName}: ${LABELS.cardsNotSaved}`)
+}
+
 // A finished unit of any activity: recorded once (log and mistakes together); with
 // Claude idle, a split in use closes and says how it went, else the next activity is one press away.
+// What the store would not take is said instead of the summary, which would claim it was saved.
 async function finishActivity($: EngineInterface, unit: FinishedUnit) {
   const committed = await commitUnit(storeOf($), unit, await nowIso($))
   await refreshPaneData($)
   // Already recorded (a repeated event): the learner has been told.
   if (committed !== null && !committed.isRecorded) return
+  const failure = committed === null ? LABELS.unitNotSaved : committed.areMistakesKept ? null : LABELS.cardsNotSaved
   const state = await read($, wait)
   if (!isClaudeWorking(state) && isKeptOpen(state)) {
     await closeSplit($)
-    $.ui.toast(`${LABELS.modName}: ${summaryText(unit.summary, unit.activity)}`)
+    $.ui.toast(`${LABELS.modName}: ${failure ?? summaryText(unit.summary, unit.activity)}`)
     return
   }
+  if (failure !== null) $.ui.toast(`${LABELS.modName}: ${failure}`)
   await focusKey($, 'next-unit')
 }
 

@@ -300,12 +300,14 @@ test('nothing old to move: the move is marked done and writes only the marker', 
   expect(writes).toEqual(['storage.layout'])
 })
 
-test('a store that cannot read the old keys loses nothing: not marked, reads empty, writes nothing, and the move happens later', async () => {
+test('a store that cannot read an old key loses nothing: not marked, that entry reads empty and is never written over, and the move happens later', async () => {
   const before = oldLayout()
   const { store, entries, failing, writes } = memory(new Map(Object.entries(structuredClone(before))))
   failing.get.add('progress')
+  failing.get.add('mistakes')
   expect(await migrate(store)).toBe(false)
   expect(await load(store, PROGRESS)).toEqual({ version: 1, currentLesson: 1, cards: {} })
+  expect(await load(store, MISTAKES)).toEqual({ version: 1, cards: [] })
   expect(await modify(store, PROGRESS, p => advanceLesson(p, 6))).toBeNull()
   expect(await modify(store, MISTAKES, m => recordMistakeReview(m, 'mistake-00000001', AT, true))).toBeNull()
   expect(writes).toEqual([])
@@ -317,32 +319,66 @@ test('a store that cannot read the old keys loses nothing: not marked, reads emp
   expect(entries.get('progress')).toEqual(before.progress)
 })
 
-test('a store that fails half way through the move keeps showing the old data, then completes the move', async () => {
+test('an old key that can be read is not held back by another that cannot', async () => {
+  const before = oldLayout()
+  const { store, failing } = memory(new Map(Object.entries(structuredClone(before))))
+  failing.get.add('progress')
+  expect(await modify(store, PROGRESS, p => advanceLesson(p, 6))).toBeNull()
+  expect(await modify(store, MISTAKES, m => recordMistakeReview(m, 'mistake-00000001', AT, true))).not.toBeNull()
+  expect((await load(store, MISTAKES)).cards[0]?.reviews).toHaveLength(1)
+})
+
+test('a store that fails half way through the move keeps working: reads join the new and the old, a change lands in the new, and the move completes later', async () => {
   const before = oldLayout()
   const { store, entries, failing } = memory(new Map(Object.entries(structuredClone(before))))
   failing.set.add(mistakeKey('mistake-00000002'))
   expect(await migrate(store)).toBe(false)
   expect(entries.has('storage.layout')).toBe(false)
-  // Part of the new layout is already there, yet reads answer from the old keys, whole.
+  // Part of the new layout is already there; reads answer with everything, moved or not.
   expect(entries.has(progressCardKey('c1'))).toBe(true)
   expect(await load(store, MISTAKES)).toEqual(parseMistakes(before.mistakes))
   expect((await load(store, PROGRESS)).cards.c4?.reviews).toHaveLength(1)
-  expect(await modify(store, MISTAKES, m => recordMistakeReview(m, 'mistake-00000001', AT, true))).toBeNull()
+
+  // A change is not refused: it lands in the new layout and the old keys stay as they were.
+  expect(await modify(store, MISTAKES, m => recordMistakeReview(m, 'mistake-00000001', AT, true))).not.toBeNull()
+  expect(await modify(store, PROGRESS, p => advanceLesson(p, 6))).not.toBeNull()
+  expect((await load(store, MISTAKES)).cards[0]?.reviews).toHaveLength(1)
+  expect((await load(store, PROGRESS)).currentLesson).toBe(advanceLesson(parseProgress(before.progress), 6).currentLesson)
+  expect(entries.get('mistakes')).toEqual(before.mistakes)
+  expect(entries.get('progress')).toEqual(before.progress)
 
   failing.set.clear()
   expect(await migrate(store)).toBe(true)
-  expect(await load(store, MISTAKES)).toEqual(parseMistakes(before.mistakes))
-  expect((await load(store, PROGRESS)).currentLesson).toBe(3)
+  const mistakes = await load(store, MISTAKES)
+  expect(mistakes.cards.map(c => c.id)).toEqual(parseMistakes(before.mistakes).cards.map(c => c.id))
+  expect(mistakes.cards[0]?.reviews).toHaveLength(1) // what was changed meanwhile survives the move
+  expect((await load(store, PROGRESS)).currentLesson).toBe(advanceLesson(parseProgress(before.progress), 6).currentLesson)
+})
+
+test('a store that never takes the marker still saves everything, and nothing old comes back once a change was made', async () => {
+  const before = oldLayout()
+  const { store, entries, failing } = memory(new Map(Object.entries(structuredClone(before))))
+  failing.set.add('storage.layout')
+  const ids = parseMistakes(before.mistakes).cards.map(c => c.id)
+  expect(await modify(store, MISTAKES, m => recordMistakeReview(m, ids[1] as string, AT, true))).not.toBeNull()
+  expect(await modify(store, PROGRESS, p => recordAttempt(p, 'c3', AT, true))).not.toBeNull()
+  expect(await migrate(store)).toBe(false)
+  expect((await load(store, MISTAKES)).cards.map(c => c.id)).toEqual(ids)
+  expect((await load(store, MISTAKES)).cards[1]?.reviews).toHaveLength(3)
+  expect((await load(store, PROGRESS)).cards.c3?.reviews).toHaveLength(1)
+  expect((await load(store, PROGRESS)).cards.c1?.reviews).toHaveLength(2)
   expect(entries.get('mistakes')).toEqual(before.mistakes)
 })
 
-test('a store that cannot write at all does not throw anywhere in the move', async () => {
+test('a store that cannot write the move at all does not throw anywhere and keeps the old data readable', async () => {
   const { store, entries, failing } = memory(new Map(Object.entries(structuredClone(oldLayout()))))
   failing.set.add(progressCardKey('c1'))
   failing.set.add(mistakeKey('mistake-00000001'))
   failing.set.add('storage.layout')
   expect(await migrate(store)).toBe(false)
-  expect(await load(store, PROGRESS)).toEqual(parseProgress(OLD_PROGRESS))
+  const { 'not-in-the-pack': _outsideThePack, ...inThePack } = parseProgress(OLD_PROGRESS).cards
+  expect(await load(store, PROGRESS)).toEqual({ ...parseProgress(OLD_PROGRESS), cards: inThePack })
+  expect(await load(store, MISTAKES)).toEqual(parseMistakes(OLD_MISTAKES))
   expect(entries.get('progress')).toEqual(OLD_PROGRESS)
 })
 
@@ -405,13 +441,36 @@ test('a store that cannot write the log records nothing, mistakes included', asy
   expect([...entries.keys()].some(key => key.startsWith('mistakes'))).toBe(false)
 })
 
-test('a store that cannot write the mistakes still logs the unit', async () => {
+test('a store that cannot write the mistakes still logs the unit, and says the cards were not kept', async () => {
   const { store, entries, failing } = memory()
   failing.set.add('mistakes.index')
   const done = await commitUnit(store, unit('conversation-1'), AT)
   expect(done?.isRecorded).toBe(true)
+  expect(done?.areMistakesKept).toBe(false)
   expect((entries.get('activity') as { units: number }).units).toBe(1)
   expect((await load(store, MISTAKES)).cards).toEqual([])
+})
+
+test('a unit says its cards were kept, also when it had none to keep', async () => {
+  const { store } = memory()
+  expect((await commitUnit(store, unit('conversation-1'), AT))?.areMistakesKept).toBe(true)
+  expect((await commitUnit(store, unit('reading-1', { activity: 'reading', corrections: [] }), AT))?.areMistakesKept).toBe(true)
+})
+
+test('a unit keeps its cards even when the move of the old layout can never be marked done', async () => {
+  const { store, failing } = memory(new Map(Object.entries(structuredClone(oldLayout()))))
+  failing.set.add('storage.layout')
+  const done = await commitUnit(store, unit('conversation-1'), AT)
+  expect(done?.areMistakesKept).toBe(true)
+  expect((await load(store, MISTAKES)).cards.map(c => c.wrong)).toContain('go')
+})
+
+test('a unit whose cards cannot be read before they are changed says they were not kept', async () => {
+  const { store, failing } = memory(new Map(Object.entries(structuredClone(oldLayout()))))
+  failing.get.add('mistakes')
+  const done = await commitUnit(store, unit('conversation-1'), AT)
+  expect(done?.isRecorded).toBe(true)
+  expect(done?.areMistakesKept).toBe(false)
 })
 
 test('mistakes of a unit left half done are numbered by the next unit, without logging it', async () => {
