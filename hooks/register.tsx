@@ -88,7 +88,7 @@ import {
 import type { TutorContext } from '../src/tutor'
 import { listenUrl } from '../src/listen'
 import { MAX_ANSWER_EXCERPT, MAX_PROMPT_EXCERPT, NO_CONTEXT, contextForTutor, excerpt } from '../src/context'
-import { ACTIVITY, MISTAKES, SETUP, commitUnit, keepMistakes, load, modify, progressOf, save } from '../src/storage'
+import { ACTIVITY, MISTAKES, SETUP, commitUnit, keepMistakes, load, modify, progressOf, save, tryLoad } from '../src/storage'
 import type { FinishedUnit, Store, UnitMistakes } from '../src/storage'
 import { generatedOpeningPrompt, parseScenario, pickScenario } from '../src/roleplay'
 import {
@@ -127,14 +127,14 @@ const setupBand = atom({ plugin: 'lingo-pane', key: 'setupBand' } as const, { is
 // The progress kept for the built-in pack's cards (one key per card).
 const PACK_PROGRESS = progressOf(DEMO_CARDS.map(c => c.id))
 
-// What the pane draws from the store (activity log; progress and mistakes for the
-// review), mirrored so the redraw every second while Claude works reads no
+// What the pane needs of the store: the activity log, and the progress and mistakes for the review.
+type PaneValues = Omit<LingoPaneData, 'isLoaded'>
+const NO_PANE_VALUES: PaneValues = { log: ACTIVITY.empty, progress: PACK_PROGRESS.empty, mistakes: MISTAKES.empty }
+
+// Those values, mirrored so the redraw every second while Claude works reads no
 // storage. Loaded when the pane opens and after each write; like `setupCache`,
 // `isLoaded` false (state reset by /clear, not yet reloaded) means "read the store".
-const paneData = atom(
-  { plugin: 'lingo-pane', key: 'paneData' } as const,
-  { isLoaded: false, log: ACTIVITY.parse(undefined), progress: PACK_PROGRESS.empty, mistakes: MISTAKES.empty },
-)
+const paneData = atom({ plugin: 'lingo-pane', key: 'paneData' } as const, { isLoaded: false, ...NO_PANE_VALUES })
 
 // The practice session in the pane (contract: types/index.d.ts). Progress lives
 // in `$.store` under `progress`; this is only where the learner is right now.
@@ -161,22 +161,32 @@ async function currentSetup($: EngineInterface): Promise<LingoSetup | null> {
   return cache.isLoaded ? cache.setup : load(storeOf($), SETUP)
 }
 
-// Reads the three values again into the mirror: after a write (our own or one a
-// refresh finds from another session) and when the pane opens.
-async function refreshPaneData($: EngineInterface) {
+// The three values as the store holds them; null when it failed to give any of
+// them, so a store that is down is never taken for an empty one.
+async function loadPaneValues($: EngineInterface): Promise<PaneValues | null> {
   const store = storeOf($)
-  const log = await load(store, ACTIVITY)
-  const progress = await load(store, PACK_PROGRESS)
-  const mistakes = await load(store, MISTAKES)
-  await update($, paneData, () => ({ isLoaded: true, log, progress, mistakes }))
+  const log = await tryLoad(store, ACTIVITY)
+  const progress = await tryLoad(store, PACK_PROGRESS)
+  const mistakes = await tryLoad(store, MISTAKES)
+  return log === null || progress === null || mistakes === null ? null : { log, progress, mistakes }
 }
 
-// What the pane draws: the mirror once loaded, the store otherwise.
-async function currentPaneData($: EngineInterface): Promise<Omit<LingoPaneData, 'isLoaded'>> {
+// Reads the three values again into the mirror: after a write (our own or one a
+// refresh finds from another session) and when the pane opens. When the store
+// fails the mirror stays as it was (not loaded, if it never was).
+async function refreshPaneData($: EngineInterface) {
+  const values = await loadPaneValues($)
+  if (values !== null) await update($, paneData, () => ({ isLoaded: true, ...values }))
+}
+
+// What the pane draws: the mirror once loaded. Not loaded (state reset by /clear,
+// not yet reloaded), the store is read, and nothing is mirrored: drawing is pure,
+// the engine denies a state write while a pane renders. The next `classic.SessionStart`
+// (it follows /clear, /resume and /branch) reloads the mirror. A store that fails
+// gives nothing to draw.
+async function currentPaneData($: EngineInterface): Promise<PaneValues> {
   const mirror = await read($, paneData)
-  if (mirror.isLoaded) return mirror
-  const store = storeOf($)
-  return { log: await load(store, ACTIVITY), progress: await load(store, PACK_PROGRESS), mistakes: await load(store, MISTAKES) }
+  return mirror.isLoaded ? mirror : ((await loadPaneValues($)) ?? NO_PANE_VALUES)
 }
 
 function dispatchWait($: EngineInterface, event: WaitEvent) {
@@ -333,7 +343,7 @@ async function startReview($: EngineInterface) {
 }
 
 // The review: the mistakes due at the next unit first, then the built-in pack's Pimsleur lesson.
-function reviewQueueOf(data: Omit<LingoPaneData, 'isLoaded'>, now: Date): LessonQueue {
+function reviewQueueOf(data: PaneValues, now: Date): LessonQueue {
   const due = dueMistakes(data.mistakes, nextUnit(data.log)).map(c => c.id)
   const pack = isFinished(data.progress, DEMO_LESSON_COUNT)
     ? { recall: [], fresh: [] }
@@ -343,9 +353,7 @@ function reviewQueueOf(data: Omit<LingoPaneData, 'isLoaded'>, now: Date): Lesson
 
 // From the store, for a handler that is about to start a session. The pane draws it from the mirror.
 async function reviewQueue($: EngineInterface): Promise<LessonQueue> {
-  const store = storeOf($)
-  const data = { log: await load(store, ACTIVITY), progress: await load(store, PACK_PROGRESS), mistakes: await load(store, MISTAKES) }
-  return reviewQueueOf(data, new Date(await $.clock.now()))
+  return reviewQueueOf((await loadPaneValues($)) ?? NO_PANE_VALUES, new Date(await $.clock.now()))
 }
 
 async function startActivity($: EngineInterface, setup: LingoSetup, activity: LingoActivity) {

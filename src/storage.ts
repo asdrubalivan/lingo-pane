@@ -225,13 +225,18 @@ export const MISTAKES: Entry<LingoMistakes> = {
 
 // --- Reading and changing ---------------------------------------------------
 
-/** What the store holds for the entry; what a missing or corrupt value gives, when it cannot be read. */
-export async function load<T>(store: Store, entry: Entry<T>): Promise<T> {
+/** What the store holds for the entry; null when it cannot be read (a missing or corrupt value is not a failure: it reads as the entry's empty one). */
+export async function tryLoad<T>(store: Store, entry: Entry<T>): Promise<T | null> {
   try {
     return await entry.read(store)
   } catch {
-    return entry.empty
+    return null
   }
+}
+
+/** What the store holds for the entry; what a missing or corrupt value gives, when it cannot be read. */
+export async function load<T>(store: Store, entry: Entry<T>): Promise<T> {
+  return (await tryLoad(store, entry)) ?? entry.empty
 }
 
 /**

@@ -56,8 +56,10 @@ const world = (on: On, store: Record<string, unknown> = {}) => {
   const entries = new Map<string, unknown>(Object.entries({ setup: SAVED, ...store }))
   const script: string[] = []
   const reads = { count: 0 }
+  const failing = { get: new Set<string>() }
   on('store.get', (_$, e) => {
     reads.count += 1
+    if (failing.get.has(e.key)) throw new Error(`cannot read ${e.key}`)
     return { value: entries.get(e.key) }
   })
   on('store.set', (_$, e) => {
@@ -75,7 +77,7 @@ const world = (on: On, store: Record<string, unknown> = {}) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
   on('classic.SessionStart', () => ({}))
-  return { entries, script, reads }
+  return { entries, script, reads, failing }
 }
 
 // The session starts (the setup is mirrored), then the person types /lingo.
@@ -152,6 +154,46 @@ test('the mirror is loaded when the pane opens, with what the store held before'
   await openWithCommand($)
   await expectMirrorOf(watch.held(), entries)
   expect(watch.held()?.mistakes.cards.map(c => c.id)).toEqual(['mistake-go'])
+})
+
+test('a store that fails when the mirror is refreshed leaves it as it was, not empty', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { entries, failing } = world(on, ONE_UNIT_DONE)
+  const watch = watchMirror(on)
+  await openWithCommand($)
+  const pane = await mountPane($)
+  const loaded = watch.held()
+  expect(loaded?.log.units).toBe(1)
+
+  failing.get.add('activity')
+  await $.classic.SessionStart({ source: 'resume' })
+  expect(watch.held()).toBe(loaded)
+
+  failing.get.clear()
+  await $.classic.SessionStart({ source: 'resume' })
+  await expectMirrorOf(watch.held(), entries)
+  await pane.unmount()
+})
+
+test('a store that cannot be read when the pane draws shows nothing and breaks nothing, and the next refresh recovers', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { entries, failing } = world(on, ONE_UNIT_DONE)
+  const watch = watchMirror(on)
+  await openWithCommand($)
+  const pane = await mountPane($)
+  const loaded = watch.held()
+
+  // State reset (as /clear leaves it) and a store that fails: the pane draws, the mirror is not touched.
+  failing.get.add('mistakes.index')
+  watch.reset()
+  await pane.redraw()
+  expect(watch.held()).toBe(loaded)
+
+  failing.get.clear()
+  await $.classic.SessionStart({ source: 'resume' })
+  await expectMirrorOf(watch.held(), entries)
+  expect(watch.held()).not.toBe(loaded)
+  await pane.unmount()
 })
 
 test('a closed unit refreshes the mirror: the button offers the activity after the one just done', async ($, on) => {
