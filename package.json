@@ -10,7 +10,9 @@
     "pretypecheck": "node scripts/ensure-types.mjs",
     "typecheck": "tsc --noEmit",
     "test": "claude plugin test .",
-    "check": "npm run typecheck && npm test"
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "check:readmes": "node scripts/check-readmes.mjs",
+    "check": "npm run typecheck && npm run check:readmes && npm run test:scripts && npm test"
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "2.1.287",
