@@ -54,7 +54,7 @@ import {
 import type { WaitEvent } from '../src/wait-machine'
 import { canSeatSplit, claudeStateLine, inlineRows, splitColumns } from '../src/split'
 import type { Viewport } from '../src/split'
-import type { LingoActivity, LingoLesson, LingoPractice, LingoReading, LingoSetup, LingoTutorState, LingoUnit, LingoUnitSummary } from '../types'
+import type { LingoActivity, LingoLesson, LingoPaneData, LingoPractice, LingoReading, LingoSetup, LingoTutorState, LingoUnit, LingoUnitSummary } from '../types'
 import {
   ACTIVITIES,
   activityLabel,
@@ -124,6 +124,18 @@ const setupWizard = atom({ plugin: 'lingo-pane', key: 'setupWizard' } as const, 
 const setupCache = atom({ plugin: 'lingo-pane', key: 'setupCache' } as const, { isLoaded: false, setup: null })
 const setupBand = atom({ plugin: 'lingo-pane', key: 'setupBand' } as const, { isHidden: false })
 
+// The progress kept for the built-in pack's cards (one key per card).
+const PACK_PROGRESS = progressOf(DEMO_CARDS.map(c => c.id))
+
+// What the pane draws from the store (activity log; progress and mistakes for the
+// review), mirrored so the redraw every second while Claude works reads no
+// storage. Loaded when the pane opens and after each write; like `setupCache`,
+// `isLoaded` false (state reset by /clear, not yet reloaded) means "read the store".
+const paneData = atom(
+  { plugin: 'lingo-pane', key: 'paneData' } as const,
+  { isLoaded: false, log: ACTIVITY.parse(undefined), progress: PACK_PROGRESS.empty, mistakes: MISTAKES.empty },
+)
+
 // The practice session in the pane (contract: types/index.d.ts). Progress lives
 // in `$.store` under `progress`; this is only where the learner is right now.
 const practice = atom({ plugin: 'lingo-pane', key: 'practice' } as const, IDLE_PRACTICE)
@@ -149,6 +161,24 @@ async function currentSetup($: EngineInterface): Promise<LingoSetup | null> {
   return cache.isLoaded ? cache.setup : load(storeOf($), SETUP)
 }
 
+// Reads the three values again into the mirror: after a write (our own or one a
+// refresh finds from another session) and when the pane opens.
+async function refreshPaneData($: EngineInterface) {
+  const store = storeOf($)
+  const log = await load(store, ACTIVITY)
+  const progress = await load(store, PACK_PROGRESS)
+  const mistakes = await load(store, MISTAKES)
+  await update($, paneData, () => ({ isLoaded: true, log, progress, mistakes }))
+}
+
+// What the pane draws: the mirror once loaded, the store otherwise.
+async function currentPaneData($: EngineInterface): Promise<Omit<LingoPaneData, 'isLoaded'>> {
+  const mirror = await read($, paneData)
+  if (mirror.isLoaded) return mirror
+  const store = storeOf($)
+  return { log: await load(store, ACTIVITY), progress: await load(store, PACK_PROGRESS), mistakes: await load(store, MISTAKES) }
+}
+
 function dispatchWait($: EngineInterface, event: WaitEvent) {
   return update($, wait, s => transition(s, event))
 }
@@ -170,9 +200,6 @@ const storeOf = ($: EngineInterface): Store => ({
   set: (key, value) => $.store.set(key, value),
   delete: key => $.store.delete(key),
 })
-
-// The progress kept for the built-in pack's cards (one key per card).
-const PACK_PROGRESS = progressOf(DEMO_CARDS.map(c => c.id))
 
 const nowIso = async ($: EngineInterface) => new Date(await $.clock.now()).toISOString()
 
@@ -285,6 +312,7 @@ async function answerQuestion($: EngineInterface, value: string) {
   if (isShown) {
     const card = { wrong: '', right: question.answer, note: before.title, sentence: question.question }
     await keepMistakes(storeOf($), { corrections: [card], woven: [], lines: [] }, await nowIso($))
+    await refreshPaneData($)
   }
   // Its cards were kept as the answers were shown: only the log is left to record.
   if (after.summary !== null) {
@@ -305,14 +333,19 @@ async function startReview($: EngineInterface) {
 }
 
 // The review: the mistakes due at the next unit first, then the built-in pack's Pimsleur lesson.
-async function reviewQueue($: EngineInterface): Promise<LessonQueue> {
-  const log = await load(storeOf($), ACTIVITY)
-  const due = dueMistakes(await load(storeOf($), MISTAKES), nextUnit(log)).map(c => c.id)
-  const latest = await load(storeOf($), PACK_PROGRESS)
-  const pack = isFinished(latest, DEMO_LESSON_COUNT)
+function reviewQueueOf(data: Omit<LingoPaneData, 'isLoaded'>, now: Date): LessonQueue {
+  const due = dueMistakes(data.mistakes, nextUnit(data.log)).map(c => c.id)
+  const pack = isFinished(data.progress, DEMO_LESSON_COUNT)
     ? { recall: [], fresh: [] }
-    : buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
+    : buildQueue(DEMO_CARDS, data.progress, now)
   return { recall: [...due, ...pack.recall], fresh: pack.fresh }
+}
+
+// From the store, for a handler that is about to start a session. The pane draws it from the mirror.
+async function reviewQueue($: EngineInterface): Promise<LessonQueue> {
+  const store = storeOf($)
+  const data = { log: await load(store, ACTIVITY), progress: await load(store, PACK_PROGRESS), mistakes: await load(store, MISTAKES) }
+  return reviewQueueOf(data, new Date(await $.clock.now()))
 }
 
 async function startActivity($: EngineInterface, setup: LingoSetup, activity: LingoActivity) {
@@ -322,6 +355,7 @@ async function startActivity($: EngineInterface, setup: LingoSetup, activity: Li
   const left = (await read($, lesson)).unit
   if (left !== null && left.summary === null) {
     await keepMistakes(storeOf($), left, await nowIso($))
+    await refreshPaneData($)
   }
   return openTalkUnit($, setup, activity)
 }
@@ -359,6 +393,7 @@ function finishedSummary(current: LingoLesson): { activity: LingoActivity; summa
 // Claude idle, a split in use closes and says how it went, else the next activity is one press away.
 async function finishActivity($: EngineInterface, unit: FinishedUnit) {
   const committed = await commitUnit(storeOf($), unit, await nowIso($))
+  await refreshPaneData($)
   // Already recorded (a repeated event): the learner has been told.
   if (committed !== null && !committed.isRecorded) return
   const state = await read($, wait)
@@ -456,6 +491,7 @@ export const register: Register = (on, options) => {
     // Load what is saved into the mirror; a missing or unreadable value is pending.
     const setup = await load(storeOf($), SETUP)
     await update($, setupCache, () => ({ isLoaded: true, setup }))
+    await refreshPaneData($)
     if (setup === null) $.ui.toast(LABELS.setupPendingToast)
 
     return next(e)
@@ -469,6 +505,7 @@ export const register: Register = (on, options) => {
 
     const setup = await load(storeOf($), SETUP)
     await update($, setupCache, () => ({ isLoaded: true, setup }))
+    await refreshPaneData($)
     if (setup === null) $.ui.toast(LABELS.setupPendingToast)
 
     return next(e)
@@ -507,6 +544,7 @@ export const register: Register = (on, options) => {
     }
 
     // Asked by the person, so it is placed at any width (docked from 110 columns in fullscreen).
+    await refreshPaneData($)
     const opened = await $.ui.open(openArgs(setup, e.presentation?.columns))
     if (opened.isPlaced) await dispatchWait($, { type: 'pane-placed', opener: 'person' })
     // Straight into the unfinished activity or the suggested one.
@@ -554,6 +592,7 @@ export const register: Register = (on, options) => {
       }
 
       // Unasked, the engine seats it from 144 columns (110 once the person opened it).
+      await refreshPaneData($)
       const opened = await $.ui.open(openArgs(setup))
       if (opened.isPlaced) {
         await dispatchWait($, { type: 'pane-placed', opener: 'mod' })
@@ -736,6 +775,7 @@ export const register: Register = (on, options) => {
               onPress={async () => {
                 await dispatchWait($, { type: 'offer-taken' })
                 // Opened by a press: placed at any width, inline when it cannot dock.
+                await refreshPaneData($)
                 const opened = await $.ui.open(openArgs(setup))
                 if (opened.isPlaced) await dispatchWait($, { type: 'pane-placed', opener: 'person' })
                 if (setup !== null) await ensureLesson($, setup)
@@ -1120,7 +1160,7 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const log = await load(storeOf($), ACTIVITY)
+    const { log } = await currentPaneData($)
     const suggested = suggestActivity(log, AVAILABLE_ACTIVITIES)
     const nextButton = (
       <Button
@@ -1353,8 +1393,8 @@ export const register: Register = (on, options) => {
     async function drawReview() {
       const learner = setup as LingoSetup
       const session = await read($, practice)
-      const progress = await load(storeOf($), PACK_PROGRESS)
-      const mistakes = await load(storeOf($), MISTAKES)
+      const data = await currentPaneData($)
+      const { progress, mistakes } = data
       const mistakeOf = (id: string | undefined) => mistakes.cards.find(c => c.id === id)
       const cardOf = (id: string | undefined) => {
         const mistake = mistakeOf(id)
@@ -1377,9 +1417,10 @@ export const register: Register = (on, options) => {
         const at = await nowIso($)
         if (mistakeOf(cardId) !== undefined) {
           await modify(storeOf($), MISTAKES, latest => recordMistakeReview(latest, cardId, at, isCorrect))
-          return
+        } else {
+          await modify(storeOf($), PACK_PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
         }
-        await modify(storeOf($), PACK_PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
+        await refreshPaneData($)
       }
 
       const showAnswer = async () => {
@@ -1414,6 +1455,7 @@ export const register: Register = (on, options) => {
           await modify(storeOf($), PACK_PROGRESS, stored =>
             latest.lesson === stored.currentLesson ? advanceLesson(stored, DEMO_LESSON_COUNT) : stored,
           )
+          await refreshPaneData($)
         }
         await update($, practice, () => advanced)
         // The button that was pressed holds the ring: hand it to the new field.
@@ -1458,7 +1500,7 @@ export const register: Register = (on, options) => {
 
       if (session.lesson === null) {
         const finished = isFinished(progress, DEMO_LESSON_COUNT)
-        const queue = await reviewQueue($)
+        const queue = reviewQueueOf(data, new Date(await $.clock.now()))
         const isEmpty = queue.recall.length + queue.fresh.length === 0
         return (
           <Box flexDirection="column" marginTop={1}>

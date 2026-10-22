@@ -283,6 +283,14 @@ export type LingoMistakeCard = {
 /** What the mod saves in `$.store`, one key per card (`mistakes.card.<id>` and `mistakes.index`). */
 export type LingoMistakes = { version: 1; cards: LingoMistakeCard[] }
 
+/**
+ * What the pane draws from the store, mirrored in `$.state` so that a redraw
+ * (once a second while Claude works) reads no storage: loaded when the pane
+ * opens and after every write. `$.state` resets on /clear: `isLoaded` false
+ * then means "read `$.store`", as for the setup.
+ */
+export type LingoPaneData = { isLoaded: boolean; log: LingoActivityLog; progress: LingoProgress; mistakes: LingoMistakes }
+
 /** The contextual mode's material: the learner's last prompt and Claude's last reply, cut short and redacted. Empty unless opted in. */
 export type LingoWorkContext = { prompt: string | null; answer: string | null }
 
@@ -296,6 +304,7 @@ declare module 'claude-code' {
       setupWizard: LingoSetupWizard
       setupCache: LingoSetupCache
       setupBand: LingoSetupBand
+      paneData: LingoPaneData
       practice: LingoPractice
       lesson: LingoLesson
       spinnerCard: LingoSpinnerCard
