@@ -110,6 +110,10 @@ export const CLOSED_WIZARD: LingoSetupWizard = { isOpen: false, step: 'languages
 const isImplemented = (axis: StrategyAxis, id: string): boolean =>
   STRATEGY_AXES.find(info => info.axis === axis)?.options.some(o => o.id === id && o.isImplemented) ?? false
 
+/** The one rule for a language name, wherever it enters: text that is not blank and fits the wizard's cap. */
+export const isLanguageName = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim() !== '' && value.trim().length <= MAX_LANGUAGE_LENGTH
+
 const sameLanguage = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
 
 // --- Drafts -----------------------------------------------------------------
@@ -122,11 +126,15 @@ const PREFERENCE_DEFAULTS = {
   isContextual: false,
 } as const
 
-/** The assistant's starting point: the `userConfig` languages, no level yet. */
-export function draftFromConfig(nativeLanguage: string, targetLanguage: string): LingoSetupDraft {
+/**
+ * The assistant's starting point: the `userConfig` languages, no level yet. A
+ * value that is not a valid language name starts empty, and the languages step
+ * asks for it.
+ */
+export function draftFromConfig(nativeLanguage: unknown, targetLanguage: unknown): LingoSetupDraft {
   return {
-    nativeLanguage,
-    targetLanguage,
+    nativeLanguage: isLanguageName(nativeLanguage) ? nativeLanguage : '',
+    targetLanguage: isLanguageName(targetLanguage) ? targetLanguage : '',
     level: null,
     strategies: { ...DEFAULT_STRATEGIES },
     interests: '',
@@ -262,6 +270,7 @@ export function wizardTransition(
 /** The setup to save from a finished draft, or null when it is not valid. */
 export function buildSetup(draft: LingoSetupDraft, completedAt: string): LingoSetup | null {
   if (!canAdvance('languages', draft) || draft.level === null) return null
+  if (!isLanguageName(draft.targetLanguage) || !isLanguageName(draft.nativeLanguage)) return null
   const { strategies } = draft
   const isValid = (Object.keys(DEFAULT_STRATEGIES) as StrategyAxis[]).every(axis =>
     isImplemented(axis, strategies[axis]),
@@ -294,16 +303,16 @@ const isText = (value: unknown): value is string => typeof value === 'string' &&
 
 /**
  * Whatever `$.store` held under `setup`, as a setup, or null when it is not one
- * this version understands: missing, corrupt, another version, an unknown
- * strategy id. Null means setup is pending. The fields added after the first
- * setups were saved (interests, split share, tutor model, theme, the contextual
- * opt-in) take their defaults when missing or unreadable, so an earlier setup
- * stays done.
+ * this version understands: missing, corrupt, another version, an empty or
+ * over-long language name, an unknown strategy id. Null means setup is pending.
+ * The fields added after the first setups were saved (interests, split share,
+ * tutor model, theme, the contextual opt-in) take their defaults when missing
+ * or unreadable, so an earlier setup stays done.
  */
 export function parseSetup(raw: unknown): LingoSetup | null {
   if (!isObject(raw) || raw.version !== SETUP_VERSION) return null
   const { targetLanguage, nativeLanguage, level, strategies, completedAt, interests, splitShare, tutorModel, theme, isContextual } = raw
-  if (!isText(targetLanguage) || !isText(nativeLanguage) || !isText(completedAt)) return null
+  if (!isLanguageName(targetLanguage) || !isLanguageName(nativeLanguage) || !isText(completedAt)) return null
   if (typeof level !== 'string' || !LEVELS.includes(level as LingoLevel)) return null
   if (!isObject(strategies)) return null
 
