@@ -1,0 +1,19 @@
+{
+  "name": "lingo-pane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Learn a language live in your terminal (Claude Code mod).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "types": "node scripts/ensure-types.mjs --force",
+    "pretypecheck": "node scripts/ensure-types.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "claude plugin test .",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.287",
+    "typescript": "5.9.3"
+  }
+}

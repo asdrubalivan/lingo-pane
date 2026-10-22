@@ -29,3 +29,16 @@ Los mods corren fuera del sandbox y pueden ver tus prompts y tool calls. Lo que 
 - **Envía a Google** solo cuando pulsas `🔊 listen`: la frase en pantalla, abierta en Google Translate en tu navegador.
 
 Nada más sale de tu máquina.
+
+## Contribuir
+
+Necesitas Node 22 o superior. Desde un clon limpio:
+
+```sh
+npm ci
+npm run check   # revisión de tipos y después los tests
+```
+
+- `npm test` ejecuta `claude plugin test .`, el kit de pruebas del plugin. La versión de Claude Code está fijada en `package.json` (2.1.287, de la que salen los tipos): las versiones más nuevas han cambiado el comportamiento del motor, y dos tests de permisos fallan en la 2.1.308, así que cambia la versión fijada a propósito, no por accidente.
+- `npm run typecheck` necesita las declaraciones de la API de plugins en `.claude-plugin/types/`. Las escribe el motor de Claude Code cuando carga el mod, y git las ignora porque pertenecen a la versión instalada. El script las crea por ti cargando el mod una vez con un `HOME` vacío (sin credenciales ni llamadas al modelo). `npm run types` las escribe de nuevo tras cambiar la versión fijada.
+- La CI (`.github/workflows/ci.yml`) ejecuta esos mismos dos comandos en cada pull request.

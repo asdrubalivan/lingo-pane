@@ -29,3 +29,16 @@ Mods run outside the sandbox and can see your prompts and tool calls. What `ling
 - **Sends to Google** only when you press `🔊 listen`: the phrase on screen, opened in Google Translate in your browser.
 
 Nothing else leaves your machine.
+
+## Contributing
+
+You need Node 22 or newer. From a clean clone:
+
+```sh
+npm ci
+npm run check   # type-check, then the tests
+```
+
+- `npm test` runs `claude plugin test .`, the plugin's test kit. The Claude Code version is pinned in `package.json` (2.1.287, the one the types come from): newer versions have changed the engine's behaviour, and two permission-ask tests fail on 2.1.308, so bump the pin on purpose, not by accident.
+- `npm run typecheck` needs the plugin API's declarations in `.claude-plugin/types/`. They are written by the Claude Code engine when it loads the mod, and git ignores them because they belong to the installed version. The script creates them for you by loading the mod once with an empty `HOME` (no credentials, no model call). `npm run types` writes them again after you change the pinned version.
+- CI (`.github/workflows/ci.yml`) runs the same two commands on every pull request.
