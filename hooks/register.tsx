@@ -21,6 +21,7 @@ import {
 } from '../src/lesson'
 import { socratic } from '../src/correction/socratic'
 import { badThemeText, parseLingoArgs, unknownSubcommandText } from '../src/command'
+import { failureReason } from '../src/failure'
 import { LABELS } from '../src/labels'
 import { THEMES, themeByName } from '../src/themes'
 import { microLesson, spinnerSuffix } from '../src/microcards'
@@ -197,7 +198,8 @@ function tutorContext(setup: LingoSetup, unit: LingoUnit | null, material: strin
   }
 }
 
-// One call on the learner's own plan, with the model chosen in the setup.
+// One call on the learner's own plan, with the model chosen in the setup. The
+// platform's result comes back whole: when there is no text, it says why.
 async function callTutor($: EngineInterface, setup: LingoSetup, system: string, prompt: string, maxTokens = TUTOR_MAX_TOKENS) {
   return $.model.complete({
     model: setup.tutorModel,
@@ -207,6 +209,11 @@ async function callTutor($: EngineInterface, setup: LingoSetup, system: string, 
     maxTokens,
     timeoutMs: TUTOR_TIMEOUT_MS,
   })
+}
+
+// Why a reply gave nothing to use: the platform's reason, or an answer the parser refused.
+function whyNothing(reply: Awaited<ReturnType<typeof callTutor>>): string {
+  return reply.isAnswered ? LABELS.failureUnreadable : failureReason(reply)
 }
 
 // A change to the unit on screen, only if it is still the same unit.
@@ -234,7 +241,7 @@ async function openTalkUnit($: EngineInterface, setup: LingoSetup, activity: Lin
   const madeUp = isMadeUp && reply.isAnswered ? parseScenario(reply.text) : null
   await updateUnit($, unit.id, u => {
     if (u.pending !== 'opening') return u
-    const opened = turn === null ? withoutTutor(u, LABELS.tutorSilentOpening) : withTutorTurn(u, turn)
+    const opened = turn === null ? withoutTutor(u, LABELS.tutorSilentOpening(whyNothing(reply))) : withTutorTurn(u, turn)
     return madeUp === null ? opened : { ...opened, scenario: madeUp }
   })
 }
@@ -260,7 +267,7 @@ async function openReading($: EngineInterface, setup: LingoSetup) {
   await update($, lesson, (l): LingoLesson =>
     l.reading === null || l.reading.id !== id
       ? l
-      : { ...l, reading: written ?? { ...l.reading, isPending: false, notice: LABELS.readingSilent } },
+      : { ...l, reading: written ?? { ...l.reading, isPending: false, notice: LABELS.readingSilent(whyNothing(reply)) } },
   )
   if (written !== null) await focusKey($, 'reading-answer')
 }
@@ -392,7 +399,7 @@ async function sendReply($: EngineInterface, setup: LingoSetup, text: string) {
   const reply = await callTutor($, setup, tutorSystem(ctx), replyPrompt(ctx, asked, asked.replies >= UNIT_REPLIES))
   const turn = reply.isAnswered ? parseTutorTurn(reply.text) : null
   await updateUnit($, before.id, u =>
-    u.pending !== 'reply' ? u : turn === null ? withoutTutor(u, LABELS.tutorSilentReply) : withTutorTurn(u, turn),
+    u.pending !== 'reply' ? u : turn === null ? withoutTutor(u, LABELS.tutorSilentReply(whyNothing(reply))) : withTutorTurn(u, turn),
   )
   const after = (await read($, lesson)).unit
   if (after !== null && after.id === before.id && after.summary !== null) await finishUnit($, after)
@@ -408,7 +415,7 @@ async function sendHelp($: EngineInterface, setup: LingoSetup) {
   const ctx = tutorContext(setup, asked, await sessionMaterial($, setup))
   const reply = await callTutor($, setup, tutorSystem(ctx), helpPrompt(ctx, asked))
   const text = reply.isAnswered ? reply.text.trim() : ''
-  await updateUnit($, before.id, u => (u.pending !== 'help' ? u : text === '' ? withoutTutor(u, LABELS.tutorSilentHelp) : withHelp(u, text)))
+  await updateUnit($, before.id, u => (u.pending !== 'help' ? u : text === '' ? withoutTutor(u, LABELS.tutorSilentHelp(whyNothing(reply))) : withHelp(u, text)))
 }
 
 export const register: Register = (on, options) => {
@@ -1447,7 +1454,7 @@ export const register: Register = (on, options) => {
         const after = await read($, practice)
         if (after.index !== latest.index || after.status !== 'asking') return
         const tutor: LingoTutorState = !reply.isAnswered
-          ? { kind: 'unavailable', text: LABELS.hintUnavailable }
+          ? { kind: 'unavailable', text: LABELS.hintUnavailable(failureReason(reply)) }
           : leaksAnswer(reply.text, current.answer)
             ? { kind: 'unavailable', text: LABELS.hintLeaked }
             : { kind: 'answered', text: reply.text.trim() }
