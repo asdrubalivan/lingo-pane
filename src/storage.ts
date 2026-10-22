@@ -12,7 +12,7 @@ import { MISTAKES_STORE_KEY, addCorrections, parseMistakes, recordMistakeReview,
 import { SETUP_STORE_KEY, parseSetup } from './setup'
 import type { LingoActivity, LingoActivityLog, LingoCorrection, LingoLine, LingoUnitSummary } from '../types'
 
-/** What the module needs of `$.store`. */
+/** What the module needs of `$.store`. A hooks module cannot hand `$` across an import: it wraps the two calls (`storeOf` in hooks/register.tsx). */
 export type Store = {
   get: (key: string) => Promise<unknown>
   set: (key: string, value: unknown) => Promise<void>
