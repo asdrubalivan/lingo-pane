@@ -15,5 +15,8 @@
   "devDependencies": {
     "@anthropic-ai/claude-code": "2.1.287",
     "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
