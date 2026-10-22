@@ -60,24 +60,29 @@ export function parseActivityLog(raw: unknown): LingoActivityLog {
       at: r.at as string,
       sentences: r.sentences as number,
       corrections: r.corrections as number,
+      ...(typeof r.id === 'string' ? { id: r.id } : {}),
     }))
     .slice(-MAX_RECENT)
   return { version: ACTIVITY_LOG_VERSION, units: raw.units, lastDoneAt, done, recent }
 }
 
-/** A finished unit: counted, dated, and kept among the recent ones. */
+/** The number of the unit about to be logged; every card and every due check takes it from here. */
+export const nextUnit = (log: LingoActivityLog): number => log.units + 1
+
+/** A finished unit: counted, dated, and kept among the recent ones (`id` marks it as recorded). */
 export function recordUnit(
   log: LingoActivityLog,
   activity: LingoActivity,
   summary: LingoUnitSummary,
   at: string,
+  id?: string,
 ): LingoActivityLog {
   return {
     ...log,
-    units: log.units + 1,
+    units: nextUnit(log),
     lastDoneAt: { ...log.lastDoneAt, [activity]: at },
     done: { ...log.done, [activity]: (log.done[activity] ?? 0) + 1 },
-    recent: [...log.recent, { activity, at, ...summary }].slice(-MAX_RECENT),
+    recent: [...log.recent, { activity, at, ...summary, ...(id === undefined ? {} : { id }) }].slice(-MAX_RECENT),
   }
 }
 

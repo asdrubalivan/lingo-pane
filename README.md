@@ -25,7 +25,7 @@ Mods run outside the sandbox and can see your prompts and tool calls. What `ling
 
 - **Reads:** when a turn starts and ends, whether a tool call needs your permission, and the terminal's size, to open and close the split at the right time. It does not keep your prompts or Claude's replies, unless you turn on the option below.
 - **Stores** (in Claude Code's plugin store on your machine): your setup, your progress in the built-in pack, the cards made from your mistakes and a short log of finished units.
-- **Sends to Claude** (with your session's credentials, on your plan): the tutor's requests, which hold your languages, level and interests, your lines in the lesson and the mistakes due for review. With the optional **"material from your own session"** setting on (off by default), also short excerpts of your last prompt and of Claude's last reply, with anything that looks like a key, a password or an email address removed first.
+- **Sends to Claude** (with your session's credentials, on your plan): the tutor's requests, which hold your languages, level and interests, your lines in the lesson and the mistakes due for review. With the optional **"material from your own session"** setting on (off by default), also short excerpts of your last prompt and of Claude's last reply, with anything that looks like a key, a token, a password or an email address replaced first by a placeholder such as `[redacted]` or `[email]`.
 - **Sends to Google** only when you press `🔊 listen`: the phrase on screen, opened in Google Translate in your browser.
 
 Nothing else leaves your machine.
@@ -41,4 +41,5 @@ npm run check   # type-check, then the tests
 
 - `npm test` runs `claude plugin test .`, the plugin's test kit. The Claude Code version is pinned in `package.json` (2.1.287, the one the types come from): newer versions have changed the engine's behaviour, and two permission-ask tests fail on 2.1.308, so bump the pin on purpose, not by accident.
 - `npm run typecheck` needs the plugin API's declarations in `.claude-plugin/types/`. They are written by the Claude Code engine when it loads the mod, and git ignores them because they belong to the installed version. The script creates them for you by loading the mod once with an empty `HOME` (no credentials, no model call). `npm run types` writes them again after you change the pinned version.
-- CI (`.github/workflows/ci.yml`) runs the same two commands on every pull request.
+- `npm run check:readmes` compares the headings of `README.md`, `README.es.md` and `README.fr.md` (same count and levels, in the same order), so edit the three in the same commit; `check` runs it.
+- CI (`.github/workflows/ci.yml`) runs `npm run check` on every pull request.

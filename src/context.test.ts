@@ -27,10 +27,55 @@ test('what looks like a secret or an email never gets kept', () => {
   expect(excerpt('fix the date parser in utils.ts', 300)).toBe('fix the date parser in utils.ts')
 })
 
+test('bearer tokens, dotted tokens, URL credentials and padded tokens never get kept', () => {
+  const jwt =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkFuYSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+  const said = [
+    `curl -H "Authorization: Bearer 8f3k2LmQ9xT7vB1nZ4cR" https://api.example.com`,
+    `the session cookie is ${jwt}`,
+    'clone https://deploy-bot:s3cretPass@git.example.com/acme/app.git',
+    'or https://ghp_x7Kd92LmQpRt@github.com/acme/app.git',
+    'blob dGhpcyBpcyBhIHNlY3JldCBwYXlsb2FkIQ== was sent',
+    'again dGhpcyBpcyBhIHNlY3JldCBwYXlsb2FkISEhISE=',
+    'dotted K7xP2mQ9vL4nR8tW.Zb3Yc6Hd1Fg5Js0A.Xe9Uo2Ki7Mp4Nq1B',
+  ].join(' ')
+  const kept = excerpt(said, 1000) ?? ''
+  for (const leak of [
+    '8f3k2LmQ',
+    'eyJ',
+    'SflKxw',
+    'deploy-bot',
+    's3cretPass',
+    'ghp_',
+    'dGhpcy',
+    '==',
+    'ISEhISE',
+    'K7xP2mQ9',
+    'Zb3Yc6Hd',
+    'Xe9Uo2Ki',
+  ]) {
+    expect(kept).not.toContain(leak)
+  }
+  expect(kept).toContain('https://[redacted]@git.example.com/acme/app.git')
+  expect(kept).toContain('https://api.example.com')
+})
+
+test('ordinary dotted and hyphenated text is not mistaken for a token', () => {
+  expect(excerpt('see https://example.com/docs and src/app.module.ts, then com.example.app', 300)).toBe(
+    'see https://example.com/docs and src/app.module.ts, then com.example.app',
+  )
+})
+
 test('the tutor reads the prompt and the reply, or nothing', () => {
   expect(contextForTutor(NO_CONTEXT)).toBeNull()
   expect(contextForTutor({ prompt: 'fix the parser', answer: null })).toBe('The learner asked Claude: fix the parser')
   expect(contextForTutor({ prompt: 'fix it', answer: 'Done: the parser handles dates.' })).toBe(
     'The learner asked Claude: fix it\nClaude replied: Done: the parser handles dates.',
   )
+})
+
+test('a rule or banner of dashes and equals signs is not a secret', () => {
+  const rule = `${'-'.repeat(40)} ${'='.repeat(40)} ${'_'.repeat(40)}`
+  expect(excerpt(rule, 300)).toBe(rule)
+  expect(excerpt(`ok ${'a1'.repeat(20)}==`, 300)).toBe('ok [redacted]')
 })

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { newUnit, withLearnerLine, withTutorTurn } from './conversation'
-import { helpPrompt, openingPrompt, parseTutorTurn, replyPrompt, tutorSystem } from './tutor'
+import { MAX_FIX_LENGTH, MAX_NOTE_LENGTH, MAX_TUTOR_LENGTH, newUnit, withLearnerLine, withTutorTurn } from './conversation'
+import { helpPrompt, openingPrompt, parseHelp, parseTutorTurn, replyPrompt, tutorSystem } from './tutor'
 import type { TutorContext } from './tutor'
 
 const CTX: TutorContext = {
@@ -76,4 +76,26 @@ test('a reply that ignores the format is the line, with no correction; an empty 
   expect(parseTutorTurn('FIX: garbage\nTUTOR: ok')).toEqual({ tutor: 'ok', fix: null })
   expect(parseTutorTurn('  \n')).toBeNull()
   expect(parseTutorTurn('FIX: a => b')).toBeNull()
+})
+
+test('control sequences in the reply never reach the line or the correction', () => {
+  const turn = parseTutorTurn('\u001b]0;pwned\u0007FIX: \u001b[31mgo\u001b[0m => w\u0007ent :: pas\u0000ado\nTUTOR: Try \u001b]52;c;ZWNobw==\u0007go\u009b2J again.\u0008')
+  expect(turn).toEqual({ tutor: 'Try go again.', fix: { wrong: 'go', right: 'went', note: 'pasado' } })
+  expect(parseTutorTurn('\u001b[2J\u0007')).toBeNull()
+})
+
+test('the line, the correction and the note are capped', () => {
+  const turn = parseTutorTurn(`FIX: ${'a'.repeat(500)} => ${'b'.repeat(500)} :: ${'c'.repeat(500)}\nTUTOR: ${'d'.repeat(5000)}`)
+  expect(turn?.tutor.length).toBe(MAX_TUTOR_LENGTH)
+  expect(turn?.fix?.wrong.length).toBe(MAX_FIX_LENGTH)
+  expect(turn?.fix?.right.length).toBe(MAX_FIX_LENGTH)
+  expect(turn?.fix?.note.length).toBe(MAX_NOTE_LENGTH)
+  // Cut to the same form, a correction says nothing.
+  expect(parseTutorTurn(`FIX: ${'a'.repeat(100)}x => ${'a'.repeat(100)}y\nTUTOR: ok`)).toEqual({ tutor: 'ok', fix: null })
+})
+
+test('help text keeps its line breaks, loses control sequences, and is capped', () => {
+  expect(parseHelp('  I ___ to the \u001b[1mpark\u001b[0m.\n\u001b]0;x\u0007Or: went  ')).toBe('I ___ to the park.\nOr: went')
+  expect(parseHelp('x'.repeat(5000))?.length).toBe(MAX_TUTOR_LENGTH)
+  expect(parseHelp(' \u001b[2J\n ')).toBeNull()
 })

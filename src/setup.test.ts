@@ -9,6 +9,7 @@ import {
   canAdvance,
   draftFromConfig,
   draftFromSetup,
+  isLanguageName,
   parseInterests,
   parseSetup,
   resolveSetup,
@@ -135,6 +136,21 @@ test('every axis has at least one implemented option and the defaults are among 
   }
 })
 
+test('a language name is non-empty text of at most the wizard length', () => {
+  expect(isLanguageName('Ukrainian')).toBe(true)
+  expect(isLanguageName('x'.repeat(40))).toBe(true)
+  // Valid, empty, over-long and corrupt values.
+  for (const bad of ['', '   ', 'x'.repeat(41), 3, null, undefined, {}, ['English']]) expect(isLanguageName(bad)).toBe(false)
+})
+
+test('the userConfig languages go through the same rule before the wizard starts from them', () => {
+  expect(draftFromConfig('Spanish', 'English')).toMatchObject({ nativeLanguage: 'Spanish', targetLanguage: 'English' })
+  // An unusable value starts the field empty, so the languages step asks for it.
+  expect(draftFromConfig('x'.repeat(41), undefined)).toMatchObject({ nativeLanguage: '', targetLanguage: '' })
+  expect(draftFromConfig('  ', 7)).toMatchObject({ nativeLanguage: '', targetLanguage: '' })
+  expect(stepProblem('languages', draftFromConfig('x'.repeat(41), 'English'))).toMatch(/both/)
+})
+
 test('buildSetup saves a valid draft trimmed, and refuses an incomplete or invalid one', () => {
   const draft = { ...draftFromConfig(' Spanish ', 'English '), level: 'B2' as const }
   expect(buildSetup(draft, 'now')).toEqual({
@@ -157,8 +173,15 @@ test('buildSetup saves a valid draft trimmed, and refuses an incomplete or inval
   })
   expect(buildSetup({ ...draft, splitShare: 60 }, 'now')).toBeNull()
   expect(buildSetup(draftFromConfig('Spanish', 'English'), 'now')).toBeNull()
+  expect(buildSetup({ ...draft, nativeLanguage: 'x'.repeat(41) }, 'now')).toBeNull()
   expect(buildSetup({ ...draft, targetLanguage: 'spanish' }, 'now')).toBeNull()
   expect(buildSetup({ ...draft, strategies: { ...DEFAULT_STRATEGIES, correctionStyle: 'direct' } }, 'now')).toBeNull()
+})
+
+test('parseSetup keeps the language names without the padding they were saved with', () => {
+  const padded = parseSetup({ ...SAVED, targetLanguage: ' French ', nativeLanguage: 'Spanish  ' })
+  expect(padded?.targetLanguage).toBe('French')
+  expect(padded?.nativeLanguage).toBe('Spanish')
 })
 
 test('parseSetup accepts what buildSetup wrote and nothing else', () => {
@@ -180,6 +203,10 @@ test('parseSetup accepts what buildSetup wrote and nothing else', () => {
     { ...SAVED, level: undefined },
     { ...SAVED, targetLanguage: '' },
     { ...SAVED, nativeLanguage: 3 },
+    { ...SAVED, targetLanguage: '   ' },
+    { ...SAVED, targetLanguage: 'x'.repeat(41) },
+    { ...SAVED, nativeLanguage: 'x'.repeat(41) },
+    { ...SAVED, nativeLanguage: ['Spanish'] },
     { ...SAVED, completedAt: undefined },
     { ...SAVED, strategies: undefined },
     { ...SAVED, strategies: { ...SAVED.strategies, reviewAlgorithm: 'fsrs' } },
@@ -190,6 +217,11 @@ test('parseSetup accepts what buildSetup wrote and nothing else', () => {
 
 test('parseSetup drops unknown extra fields instead of carrying them', () => {
   expect(parseSetup({ ...SAVED, extra: 'x' })).toEqual(SAVED)
+})
+
+test('parseSetup accepts a language name of exactly the wizard maximum', () => {
+  const name = 'x'.repeat(40)
+  expect(parseSetup({ ...SAVED, targetLanguage: name })?.targetLanguage).toBe(name)
 })
 
 test('a setup saved before the new preferences stays done, with their defaults', () => {

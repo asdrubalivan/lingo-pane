@@ -25,7 +25,7 @@ Los mods corren fuera del sandbox y pueden ver tus prompts y tool calls. Lo que 
 
 - **Lee:** cuándo empieza y termina un turno, si una tool call necesita tu permiso y el tamaño de la terminal, para abrir y cerrar el split a tiempo. No guarda tus prompts ni las respuestas de Claude, salvo que actives la opción de abajo.
 - **Guarda** (en el almacén de plugins de Claude Code, en tu máquina): tu setup, tu avance en el pack incluido, las tarjetas hechas con tus errores y un registro corto de las unidades terminadas.
-- **Envía a Claude** (con las credenciales de tu sesión, a cargo de tu plan): las peticiones del tutor, que llevan tus idiomas, nivel e intereses, tus líneas en la lección y los errores que tocan repasar. Con la opción **"material de tu propia sesión"** activada (apagada por defecto), también extractos cortos de tu último prompt y de la última respuesta de Claude, quitando antes lo que parezca una clave, una contraseña o un correo.
+- **Envía a Claude** (con las credenciales de tu sesión, a cargo de tu plan): las peticiones del tutor, que llevan tus idiomas, nivel e intereses, tus líneas en la lección y los errores que tocan repasar. Con la opción **"material de tu propia sesión"** activada (apagada por defecto), también extractos cortos de tu último prompt y de la última respuesta de Claude, sustituyendo antes lo que parezca una clave, un token, una contraseña o un correo por un marcador como `[redacted]` o `[email]`.
 - **Envía a Google** solo cuando pulsas `🔊 listen`: la frase en pantalla, abierta en Google Translate en tu navegador.
 
 Nada más sale de tu máquina.
@@ -41,4 +41,5 @@ npm run check   # revisión de tipos y después los tests
 
 - `npm test` ejecuta `claude plugin test .`, el kit de pruebas del plugin. La versión de Claude Code está fijada en `package.json` (2.1.287, de la que salen los tipos): las versiones más nuevas han cambiado el comportamiento del motor, y dos tests de permisos fallan en la 2.1.308, así que cambia la versión fijada a propósito, no por accidente.
 - `npm run typecheck` necesita las declaraciones de la API de plugins en `.claude-plugin/types/`. Las escribe el motor de Claude Code cuando carga el mod, y git las ignora porque pertenecen a la versión instalada. El script las crea por ti cargando el mod una vez con un `HOME` vacío (sin credenciales ni llamadas al modelo). `npm run types` las escribe de nuevo tras cambiar la versión fijada.
-- La CI (`.github/workflows/ci.yml`) ejecuta esos mismos dos comandos en cada pull request.
+- `npm run check:readmes` compara los encabezados de `README.md`, `README.es.md` y `README.fr.md` (misma cantidad y niveles, en el mismo orden), así que edita los tres en el mismo commit; `check` lo ejecuta.
+- La CI (`.github/workflows/ci.yml`) ejecuta `npm run check` en cada pull request.

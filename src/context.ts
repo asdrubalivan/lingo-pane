@@ -14,14 +14,19 @@ export const NO_CONTEXT: LingoWorkContext = { prompt: null, answer: null }
 // Things that look like credentials or personal data, replaced before keeping.
 const REDACTIONS: readonly [RegExp, string][] = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[redacted key]'],
+  // Credentials inside a URL (`user:pass@host`, `token@host`) go before the email pattern.
+  [/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1[redacted]@'],
+  [/\bBearer\s+[\w.~+/=-]{8,}/gi, 'Bearer [redacted]'],
+  // A JWT (its header starts `eyJ`), or any token of three or more long dotted parts.
+  [/\beyJ[\w-]{5,}\.[\w-]{2,}\.[\w-]*|\b[\w-]{16,}(?:\.[\w-]{16,}){2,}/g, '[redacted]'],
   [/\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, '[redacted]'],
   [/\b(?:ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{8,}/g, '[redacted]'],
   [/\bxox[abposr]-[A-Za-z0-9-]{8,}/g, '[redacted]'],
   [/\bAKIA[0-9A-Z]{16}\b/g, '[redacted]'],
   [/\b(?:password|passwd|secret|token|api[_-]?key)\s*[:=]\s*\S+/gi, '[redacted]'],
   [/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]'],
-  // A long unbroken run of key-like characters (a token, a hash).
-  [/\b[A-Za-z0-9+/_=-]{32,}\b/g, '[redacted]'],
+  // A long unbroken run of key-like characters (a token, a hash), padding `=` included, but not a rule of `-` or `=`.
+  [/(?<![A-Za-z0-9+/_=-])(?=[=_-]*[A-Za-z0-9+/])[A-Za-z0-9+/_=-]{32,}(?![A-Za-z0-9+/_=-])/g, '[redacted]'],
 ]
 
 /** The text with what looks like a secret replaced, whitespace collapsed, and cut to `max`. */

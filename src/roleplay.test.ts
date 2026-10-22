@@ -1,7 +1,14 @@
 import { expect, test } from 'claude-code/testing'
 
 import { scenariosFor } from './content/roleplay-scenarios'
-import { generatedOpeningPrompt, parseScenario, pickScenario } from './roleplay'
+import {
+  MAX_SCENARIO_ROLE_LENGTH,
+  MAX_SCENARIO_SITUATION_LENGTH,
+  MAX_SCENARIO_TITLE_LENGTH,
+  generatedOpeningPrompt,
+  parseScenario,
+  pickScenario,
+} from './roleplay'
 import type { TutorContext } from './tutor'
 
 test('without interests the fixed list of the level rotates, wrapping around', () => {
@@ -40,4 +47,15 @@ test('the made-up setting is read from its line; an incomplete one is nothing', 
   expect(parseScenario('SCENARIO: A :: B :: C')).toBeNull()
   expect(parseScenario('SCENARIO: A ::  :: C :: D')).toBeNull()
   expect(parseScenario('TUTOR: Hi!')).toBeNull()
+})
+
+test('the made-up setting loses control sequences and every field is capped', () => {
+  expect(parseScenario('\u001b]0;x\u0007SCENARIO: Chess\u001b[31m club :: You\u0000 join. :: The\u0007 secretary. :: A \u009b2Jmember.')).toEqual({
+    id: null, title: 'Chess club', situation: 'You join.', tutorRole: 'The secretary.', learnerRole: 'A member.',
+  })
+  const long = parseScenario(`SCENARIO: ${'t'.repeat(500)} :: ${'s'.repeat(2000)} :: ${'r'.repeat(900)} :: ${'l'.repeat(900)}`)
+  expect(long?.title.length).toBe(MAX_SCENARIO_TITLE_LENGTH)
+  expect(long?.situation.length).toBe(MAX_SCENARIO_SITUATION_LENGTH)
+  expect(long?.tutorRole.length).toBe(MAX_SCENARIO_ROLE_LENGTH)
+  expect(long?.learnerRole.length).toBe(MAX_SCENARIO_ROLE_LENGTH)
 })
