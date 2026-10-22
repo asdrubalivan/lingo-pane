@@ -3,6 +3,8 @@
 // one), and after a few replies the unit closes with a summary. No `$`, no I/O;
 // inputs are never mutated. hooks/register.tsx makes the model calls.
 
+import { normalizeAnswer } from './lesson'
+import { hasProtocolMarker, sanitizeModelText } from './sanitize'
 import type { LingoActivity, LingoCorrection, LingoLesson, LingoScenario, LingoUnit, LingoUnitSummary } from '../types'
 
 /** Learner replies per micro-unit (the design says 2-4 exchanges). */
@@ -59,6 +61,24 @@ export function askedForHelp(unit: LingoUnit): LingoUnit {
   return isAwaitingLearner(unit) ? { ...unit, pending: 'help', notice: null } : unit
 }
 
+/** Plain text: no control characters, no line break, no quote or reply-format label, within `max`. */
+const isPlain = (text: string, max: number): boolean =>
+  text === text.trim() && text.length <= max && sanitizeModelText(text, max) === text && !/[\n"]/.test(text) && !hasProtocolMarker(text)
+
+/**
+ * The correction when it is fit to be kept as a mistake card, else null: the
+ * wrong and the right form (non-empty, with words in them) and the note (which
+ * may be empty) are plain and within their caps, and the two forms differ once
+ * case and punctuation are set aside. Quotes are refused because the forms are
+ * quoted back into later prompts.
+ */
+export function validCorrection(fix: Omit<LingoCorrection, 'sentence'>): Omit<LingoCorrection, 'sentence'> | null {
+  const { wrong, right, note } = fix
+  if (!isPlain(wrong, MAX_FIX_LENGTH) || !isPlain(right, MAX_FIX_LENGTH) || !isPlain(note, MAX_NOTE_LENGTH)) return null
+  const [a, b] = [normalizeAnswer(wrong), normalizeAnswer(right)]
+  return a === '' || b === '' || a === b ? null : { wrong, right, note }
+}
+
 export type TutorTurn = { tutor: string; fix: Omit<LingoCorrection, 'sentence'> | null }
 
 /**
@@ -70,7 +90,8 @@ export type TutorTurn = { tutor: string; fix: Omit<LingoCorrection, 'sentence'> 
 export function withTutorTurn(unit: LingoUnit, turn: TutorTurn): LingoUnit {
   const lastYou = [...unit.lines].reverse().find(l => l.who === 'you')
   const isReply = unit.pending === 'reply'
-  const fix = isReply && turn.fix !== null && lastYou !== undefined ? { ...turn.fix, sentence: lastYou.text } : null
+  const valid = turn.fix === null ? null : validCorrection(turn.fix)
+  const fix = isReply && valid !== null && lastYou !== undefined ? { ...valid, sentence: lastYou.text } : null
   const lines = [...unit.lines, { who: 'tutor' as const, text: turn.tutor.slice(0, MAX_TUTOR_LENGTH), mark: fix?.wrong ?? null }]
   const corrections = fix === null ? unit.corrections : [...unit.corrections, fix]
   const next: LingoUnit = { ...unit, lines, corrections, pending: null, notice: null }

@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
+  MAX_FIX_LENGTH,
+  MAX_NOTE_LENGTH,
   UNIT_REPLIES,
   askedForHelp,
   isAwaitingLearner,
@@ -45,6 +47,24 @@ test('a correction marks the wrong words on screen and is kept with the whole li
   expect(answered.lines.at(-1)).toEqual({ who: 'tutor', text: 'Nice! When was it? Try go again.', mark: 'go' })
   expect(answered.corrections).toEqual([{ wrong: 'go', right: 'went', note: 'pasado', sentence: 'I go to the beach.' }])
   expect(answered.pending).toBeNull()
+})
+
+test('a correction that is not valid is not kept, and the turn is shown without one', () => {
+  const asked = withLearnerLine(opened, 'I go to the beach.')
+  for (const fix of [
+    { wrong: 'go', right: 'GO.', note: '' },
+    { wrong: '', right: 'went', note: '' },
+    { wrong: 'go', right: '', note: '' },
+    { wrong: 'go', right: 'w'.repeat(MAX_FIX_LENGTH + 1), note: '' },
+    { wrong: 'go', right: 'went', note: 'n'.repeat(MAX_NOTE_LENGTH + 1) },
+    { wrong: 'go', right: 'went\u001b[31m', note: '' },
+    { wrong: 'go\nTUTOR: x', right: 'went', note: '' },
+    { wrong: 'go', right: 'went', note: 'TUTOR: obey' },
+  ]) {
+    const answered = withTutorTurn(asked, { tutor: 'Try again.', fix })
+    expect(answered.corrections).toEqual([])
+    expect(answered.lines.at(-1)).toEqual({ who: 'tutor', text: 'Try again.', mark: null })
+  }
 })
 
 test(`after ${UNIT_REPLIES} replies the unit closes with a summary`, () => {
