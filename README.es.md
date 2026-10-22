@@ -37,7 +37,7 @@ Necesitas Node 22 o superior. Desde un clon limpio:
 
 ```sh
 npm ci
-npm run check   # revisión de tipos y después los tests
+npm run check   # revisión de tipos, encabezados de los README, tests de los scripts y después los tests del plugin
 ```
 
 - `npm test` ejecuta `claude plugin test .`, el kit de pruebas del plugin. La versión de Claude Code está fijada en `package.json` (2.1.287, de la que salen los tipos): las versiones más nuevas han cambiado el comportamiento del motor, y dos tests de permisos fallan en la 2.1.308, así que cambia la versión fijada a propósito, no por accidente.
