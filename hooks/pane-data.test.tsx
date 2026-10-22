@@ -57,10 +57,19 @@ const world = (on: On, store: Record<string, unknown> = {}) => {
   const script: string[] = []
   const reads = { count: 0 }
   const failing = { get: new Set<string>() }
-  on('store.get', (_$, e) => {
+  // The next read of `key` can be made to wait: it answers with what the store held when it began.
+  const stall: { key: string | null; hold: Promise<void> | null; reached: () => void } = { key: null, hold: null, reached: () => {} }
+  on('store.get', async (_$, e) => {
     reads.count += 1
     if (failing.get.has(e.key)) throw new Error(`cannot read ${e.key}`)
-    return { value: entries.get(e.key) }
+    const value = entries.get(e.key)
+    if (e.key === stall.key && stall.hold !== null) {
+      const hold = stall.hold
+      stall.hold = null
+      stall.reached()
+      await hold
+    }
+    return { value }
   })
   on('store.set', (_$, e) => {
     entries.set(e.key, JSON.parse(JSON.stringify(e.value)))
@@ -77,7 +86,7 @@ const world = (on: On, store: Record<string, unknown> = {}) => {
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
   on('classic.SessionStart', () => ({}))
-  return { entries, script, reads, failing }
+  return { entries, script, reads, failing, stall }
 }
 
 // The session starts (the setup is mirrored), then the person types /lingo.
@@ -193,6 +202,33 @@ test('a mirror that could not be loaded is tried again every second while Claude
   reads.count = 0
   await clock.advance(3000)
   expect(reads.count).toBe(0)
+  await pane.unmount()
+})
+
+test('a refresh that began before a write and ends after it does not put the old values back', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { entries, stall } = world(on, ONE_UNIT_DONE)
+  const watch = watchMirror(on)
+  await openWithCommand($)
+  const pane = await mountPane($)
+  await pane.press({ key: 'switch' })
+  await pane.press({ key: 'switch-review' })
+
+  // A refresh (a session event) reads the mistake card and waits; the learner answers meanwhile and
+  // that answer is recorded and mirrored (different events do overlap); then the old read comes back.
+  let release = () => {}
+  const reached = new Promise<void>(resolve => (stall.reached = resolve))
+  stall.key = 'mistakes.card.mistake-go'
+  stall.hold = new Promise<void>(resolve => (release = resolve))
+  const old = $.classic.SessionStart({ source: 'resume' })
+  await reached
+  await pane.input({ key: 'answer-0', text: 'went' })
+  expect(watch.held()?.mistakes.cards[0]?.reviews).toHaveLength(1)
+  release()
+  await old
+
+  await expectMirrorOf(watch.held(), entries)
+  expect(watch.held()?.mistakes.cards[0]?.reviews).toHaveLength(1)
   await pane.unmount()
 })
 

@@ -328,6 +328,26 @@ test('an old key that can be read is not held back by another that cannot', asyn
   expect((await load(store, MISTAKES)).cards[0]?.reviews).toHaveLength(1)
 })
 
+test('a move does not overwrite a card another session wrote while it was moving the others', async () => {
+  const { store, entries } = memory(new Map(Object.entries(structuredClone(oldLayout()))))
+  // The write of the first card waits; the other session answers card c2 (3 attempts) meanwhile.
+  let release = () => {}
+  let arrive = () => {}
+  const held = new Promise<void>(resolve => (release = resolve))
+  const arrived = new Promise<void>(resolve => (arrive = resolve))
+  const slow: Store = {
+    ...store,
+    set: (key, value) => (key === progressCardKey('c1') ? (arrive(), held.then(() => store.set(key, value))) : store.set(key, value)),
+  }
+  const moving = migrate(slow)
+  await arrived
+  await store.set(progressCardKey('c2'), { version: 1, reviews: [{ at: AT, isCorrect: true }, { at: AT, isCorrect: true }, { at: AT, isCorrect: false }] })
+  release()
+  expect(await moving).toBe(true)
+  expect((await load(store, PROGRESS)).cards.c2?.reviews).toHaveLength(3)
+  expect(entries.get('progress')).toEqual(OLD_PROGRESS)
+})
+
 test('a store that fails half way through the move keeps working: reads join the new and the old, a change lands in the new, and the move completes later', async () => {
   const before = oldLayout()
   const { store, entries, failing } = memory(new Map(Object.entries(structuredClone(before))))
@@ -471,6 +491,12 @@ test('a unit whose cards cannot be read before they are changed says they were n
   const done = await commitUnit(store, unit('conversation-1'), AT)
   expect(done?.isRecorded).toBe(true)
   expect(done?.areMistakesKept).toBe(false)
+})
+
+test('a unit with no mistakes to keep needs no log: an unreadable one is no failure', async () => {
+  const { store, failing } = memory()
+  failing.get.add('activity')
+  expect(await keepMistakes(store, unit('conversation-1', { corrections: [] }), AT)).toBe(true)
 })
 
 test('mistakes are not kept when the log that numbers them cannot be read: a card numbered 1 would never fall due', async () => {

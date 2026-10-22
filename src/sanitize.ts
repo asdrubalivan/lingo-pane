@@ -47,10 +47,13 @@ export function sanitizeModelText(text: string, max: number): string {
 const LABELS = String.raw`FIX|TUTOR|SCENARIO|TITLE|TEXT|Q\d`
 // The ones that can forge something that is kept or acted on: a correction (`FIX`,
 // `TUTOR`) or a scenario. The reading's (`TITLE`, `TEXT`, `Q1`) are everyday words
-// in code and prose, and all a forged one can do is shape a text that is capped.
+// in code and prose; a forged one can shape a reading, whose text is sanitised and
+// capped but not checked the way a correction is (docs/decisions.md, Step 5).
 const FORGEABLE = String.raw`FIX|TUTOR|SCENARIO`
 const MARKER = new RegExp(String.raw`\b(?:${LABELS})\s*\**\s*:`, 'i')
-// In capitals only, as the mod's own formats are written: `fix:` and `Fix:` are everyday words (commit messages, changelogs).
+// In capitals only, as the mod's own formats are written: `fix:` and `Fix:` are everyday words (commit
+// messages, changelogs). The parsers read any case, so this lowers the risk and does not close it: what
+// stops a forged correction is `validCorrection`, and that the excerpt is quoted on one line.
 const FORGEABLE_MARKERS = new RegExp(String.raw`\b(${FORGEABLE})\s*\**\s*:`, 'g')
 
 /** The text holds something a reply-format parser would read as a label. */

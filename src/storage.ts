@@ -2,9 +2,9 @@
 // the validators that already guard each value, and changing a value by reading
 // it again first. `$.store` is not atomic and is shared between sessions, so
 // re-reading narrows the window in which two sessions overwrite each other; it
-// does not close it. A value that cannot be read or written never throws here:
-// a read falls back as a corrupt value does, a change is skipped (never written
-// over a value that could not be read) and says so by returning null.
+// does not close it. `load` and `modify` never throw: a read falls back as a
+// corrupt value does, a change is skipped (never written over a value that could
+// not be read) and says so by returning null. An entry's own `read` does throw.
 //
 // Card progress and each mistake live under a key of their own, so a change
 // writes only the items it touched and two sessions answering different cards
@@ -108,25 +108,29 @@ const isAbsent = async (store: Store, key: string): Promise<boolean> => (await s
 
 // The old `progress` key becomes the lesson key and one key per card; what the
 // new layout already holds is not touched, so a session that moved first and
-// has since written is never overwritten by one that moves second.
+// has since written is not overwritten by one that moves second (but for the
+// instant between one card's own check and its write).
 async function moveProgress(store: Store) {
   const old = parseProgress(await store.get(PROGRESS_STORE_KEY))
   if (old.currentLesson !== FRESH_PROGRESS.currentLesson && (await isAbsent(store, PROGRESS_LESSON_KEY))) {
     await store.set(PROGRESS_LESSON_KEY, { version: PROGRESS_VERSION, currentLesson: old.currentLesson })
   }
-  const cards = Object.entries(old.cards)
-  const isNew = await Promise.all(cards.map(([id]) => isAbsent(store, progressCardKey(id))))
-  for (const [i, [id, card]] of cards.entries()) {
-    if (isNew[i]) await store.set(progressCardKey(id), { version: PROGRESS_VERSION, ...card })
-  }
+  // Each card checks and writes in one go (the cards run side by side), so the time between the check
+  // and the write is that card's own and not that of every card before it.
+  await Promise.all(
+    Object.entries(old.cards).map(async ([id, card]) => {
+      if (await isAbsent(store, progressCardKey(id))) await store.set(progressCardKey(id), { version: PROGRESS_VERSION, ...card })
+    }),
+  )
 }
 
 async function moveMistakes(store: Store) {
   const old = parseMistakes(await store.get(MISTAKES_STORE_KEY))
-  const isNew = await Promise.all(old.cards.map(card => isAbsent(store, mistakeKey(card.id))))
-  for (const [i, card] of old.cards.entries()) {
-    if (isNew[i]) await store.set(mistakeKey(card.id), { version: MISTAKES_VERSION, ...card })
-  }
+  await Promise.all(
+    old.cards.map(async card => {
+      if (await isAbsent(store, mistakeKey(card.id))) await store.set(mistakeKey(card.id), { version: MISTAKES_VERSION, ...card })
+    }),
+  )
   const current = parseIndex(await store.get(MISTAKES_INDEX_KEY))
   const merged = [...new Set([...old.cards.map(c => c.id), ...current])].slice(-MAX_MISTAKES)
   if (merged.length !== current.length) await store.set(MISTAKES_INDEX_KEY, { version: MISTAKES_VERSION, ids: merged })
@@ -335,7 +339,8 @@ export async function commitUnit(
  * False when the store failed and they were not kept.
  */
 export async function keepMistakes(store: Store, unit: UnitMistakes, at: string): Promise<boolean> {
-  // A log that cannot be read would number the cards 1, and cards numbered 1 never fall due.
+  if (unit.corrections.length === 0 && unit.woven.length === 0) return true
+  // A log that cannot be read would number the cards 1, which come due long before their unit.
   const log = await tryLoad(store, ACTIVITY)
   return log !== null && (await saveMistakes(store, unit, nextUnit(log), at))
 }

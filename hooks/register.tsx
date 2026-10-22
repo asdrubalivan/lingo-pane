@@ -175,15 +175,21 @@ async function loadPaneValues($: EngineInterface): Promise<PaneValues | null> {
 // refresh finds from another session) and when the pane opens. When the store
 // fails the mirror stays as it was (not loaded, if it never was).
 async function refreshPaneData($: EngineInterface) {
+  const ticket = ++latestRefresh
   const values = await loadPaneValues($)
-  if (values !== null) await update($, paneData, () => ({ isLoaded: true, ...values }))
+  // A refresh that began earlier and ends later than another has read older values: it is dropped.
+  if (values !== null && ticket === latestRefresh) await update($, paneData, () => ({ isLoaded: true, ...values }))
 }
+
+// The number of the refresh that began last. Handlers of different events overlap, so a refresh
+// that began before a write can end after the refresh that write asked for.
+let latestRefresh = 0
 
 // What the pane draws: the mirror once loaded. Not loaded (state reset by /clear,
 // not yet reloaded), the store is read, and nothing is mirrored: drawing is pure,
 // the engine denies a state write while a pane renders. The next `classic.SessionStart`
 // (it follows /clear, /resume and /branch) reloads the mirror. A store that fails
-// gives nothing to draw.
+// draws as if the values were empty.
 async function currentPaneData($: EngineInterface): Promise<PaneValues> {
   const mirror = await read($, paneData)
   return mirror.isLoaded ? mirror : ((await loadPaneValues($)) ?? NO_PANE_VALUES)
