@@ -137,6 +137,34 @@ test('an empty Enter asks the tutor for a scaffold, never the answer', async ($,
   await pane.unmount()
 })
 
+test('a hostile reply is drawn and stored without control sequences', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { entries, script } = world(on)
+  script.push(
+    'FIX: none\nTUTOR: \u001b]0;pwned\u0007Hi!\u001b[2J What did\u0000 you do?',
+    'FIX: \u001b[31mgo\u001b[0m => w\u001b[0ment :: pas\u0007ado\nTUTOR: Try \u001b]52;c;ZWNobw==\u0007go again.\u009b',
+    '\u001b]8;;http://evil.example\u0007Try: I ___ \u001b[1mto\u001b[0m...\u001b]8;;\u0007',
+    'FIX: none\nTUTOR: Fine.',
+    'FIX: none\nTUTOR: Done.',
+  )
+  await openWithCommand($)
+  const pane = await mountPane($)
+  expect(await pane.find({ type: 'Text', text: /tutor +Hi! What did you do\?/ })).toBeDefined()
+
+  await pane.input({ key: 'reply', text: 'I go to the beach.' })
+  expect(await pane.find({ type: 'Text', text: /tutor +Try go again\./ })).toBeDefined()
+  await pane.input({ key: 'reply', text: '' })
+  expect(await pane.find({ type: 'Text', text: /help +Try: I ___ to\.\.\./ })).toBeDefined()
+  // Nothing on screen carries a control character.
+  expect(await pane.find({ type: 'Text', text: /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/ })).toBeUndefined()
+
+  await pane.input({ key: 'reply', text: 'I went there.' })
+  await pane.input({ key: 'reply', text: 'It was fun.' })
+  const saved = entries.get('mistakes') as { cards: { wrong: string; right: string; note: string }[] }
+  expect(saved.cards).toMatchObject([{ wrong: 'go', right: 'went', note: 'pasado' }])
+  await pane.unmount()
+})
+
 test('after three replies the unit closes; with Claude idle a split in use closes and toasts how it went', async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   const { entries, script, closes, toasts } = world(on)

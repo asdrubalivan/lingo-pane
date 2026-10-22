@@ -3,7 +3,9 @@
 // model chosen in the setup (Sonnet by default), with low effort and a cap.
 
 import { socratic } from './correction/socratic'
+import { MAX_FIX_LENGTH, MAX_NOTE_LENGTH, MAX_TUTOR_LENGTH } from './conversation'
 import type { TutorTurn } from './conversation'
+import { MAX_MODEL_REPLY, sanitizeModelText } from './sanitize'
 import type { LingoLevel, LingoScenario, LingoUnit } from '../types'
 
 export const TUTOR_MAX_TOKENS = 300
@@ -103,27 +105,35 @@ const unquote = (text: string): string => text.trim().replace(/^["'`“”‘’
  * Null when there is no line at all.
  */
 export function parseTutorTurn(text: string): TutorTurn | null {
-  const lines = text.split('\n')
+  const lines = sanitizeModelText(text, MAX_MODEL_REPLY).split('\n')
   // `FIX:`, `**FIX:**`, `**FIX**:` and the like.
   const label = (name: string) => new RegExp(`^\\s*\\**\\s*${name}\\s*\\**\\s*:\\s*\\**\\s*`, 'i')
   const fixLabel = label('FIX')
   const tutorLabel = label('TUTOR')
   const isFix = (l: string) => fixLabel.test(l)
   const tutorAt = lines.findIndex(l => tutorLabel.test(l))
-  const tutor = (
-    tutorAt === -1
+  const tutor = sanitizeModelText(
+    (tutorAt === -1
       ? lines.filter(l => !isFix(l)).join(' ')
       : [lines[tutorAt]?.replace(tutorLabel, '') ?? '', ...lines.slice(tutorAt + 1).filter(l => !isFix(l))].join(' ')
-  )
-    .replace(/\s+/g, ' ')
-    .trim()
+    )
+      .replace(/\s+/g, ' ')
+      .trim(),
+    MAX_TUTOR_LENGTH,
+  ).trim()
   if (tutor === '') return null
 
   const fixLine = lines.find(isFix)?.replace(fixLabel, '').trim() ?? ''
   const match = /^(.+?)\s*=>\s*(.+?)(?:\s*::\s*(.*))?$/.exec(fixLine)
   if (match === null || /^none\.?$/i.test(fixLine)) return { tutor, fix: null }
-  const wrong = unquote(match[1] ?? '')
-  const right = unquote(match[2] ?? '')
+  const wrong = sanitizeModelText(unquote(match[1] ?? ''), MAX_FIX_LENGTH).trim()
+  const right = sanitizeModelText(unquote(match[2] ?? ''), MAX_FIX_LENGTH).trim()
   if (wrong === '' || right === '' || wrong.toLowerCase() === right.toLowerCase()) return { tutor, fix: null }
-  return { tutor, fix: { wrong, right, note: (match[3] ?? '').trim() } }
+  return { tutor, fix: { wrong, right, note: sanitizeModelText((match[3] ?? '').trim(), MAX_NOTE_LENGTH).trim() } }
+}
+
+/** The tutor's scaffold for an empty Enter: line breaks kept, nothing else; null when there is nothing. */
+export function parseHelp(text: string): string | null {
+  const help = sanitizeModelText(text.trim(), MAX_TUTOR_LENGTH).trim()
+  return help === '' ? null : help
 }
