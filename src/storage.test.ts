@@ -473,6 +473,13 @@ test('a unit whose cards cannot be read before they are changed says they were n
   expect(done?.areMistakesKept).toBe(false)
 })
 
+test('mistakes are not kept when the log that numbers them cannot be read: a card numbered 1 would never fall due', async () => {
+  const { store, entries, failing } = memory(new Map(Object.entries({ activity: { version: 1, units: 40, lastDoneAt: {}, done: {}, recent: [] } })))
+  failing.get.add('activity')
+  expect(await keepMistakes(store, unit('conversation-1'), AT)).toBe(false)
+  expect([...entries.keys()].some(key => key.startsWith('mistakes'))).toBe(false)
+})
+
 test('mistakes of a unit left half done are numbered by the next unit, without logging it', async () => {
   const { store, entries } = memory(new Map(Object.entries({ activity: { version: 1, units: 2, lastDoneAt: {}, done: {}, recent: [] } })))
   await keepMistakes(store, unit('conversation-1'), AT)

@@ -130,8 +130,9 @@ export const spinnerLine = (card: { wrong: string; right: string }): string => `
 /**
  * Cards from a wrong form (not reading questions) that would still pass as a
  * correction: the ones to weave into a prompt and to show in the Spinner. A card
- * kept under older rules that does not is still reviewed, but its words are
- * never quoted back to the tutor or the terminal.
+ * kept under older rules that does not is still kept and reviewed (the review
+ * draws it and a hint for it is asked of the tutor), but it is never woven into a
+ * conversation nor shown in the Spinner.
  */
 export const isFormCard = (card: LingoMistakeCard): boolean => card.wrong !== '' && validCorrection(card) !== null
 

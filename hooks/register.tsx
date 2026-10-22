@@ -137,7 +137,7 @@ const NO_PANE_VALUES: PaneValues = { log: ACTIVITY.empty, progress: PACK_PROGRES
 const paneData = atom({ plugin: 'lingo-pane', key: 'paneData' } as const, { isLoaded: false, ...NO_PANE_VALUES })
 
 // The practice session in the pane (contract: types/index.d.ts). Progress lives
-// in `$.store` under `progress`; this is only where the learner is right now.
+// in `$.store` (`progress.lesson` and `progress.card.<id>`); this is only where the learner is right now.
 const practice = atom({ plugin: 'lingo-pane', key: 'practice' } as const, IDLE_PRACTICE)
 
 // The lesson in the split: the activity on screen and its micro-unit (contract: types/index.d.ts).
@@ -404,21 +404,33 @@ async function keepCards($: EngineInterface, unit: UnitMistakes) {
 
 // A finished unit of any activity: recorded once (log and mistakes together); with
 // Claude idle, a split in use closes and says how it went, else the next activity is one press away.
-// What the store would not take is said instead of the summary, which would claim it was saved.
+// What the store would not take is marked on the unit's summary, so the toast, the pane and the
+// toast when the turn ends all say so instead of claiming it was saved.
 async function finishActivity($: EngineInterface, unit: FinishedUnit) {
   const committed = await commitUnit(storeOf($), unit, await nowIso($))
   await refreshPaneData($)
   // Already recorded (a repeated event): the learner has been told.
   if (committed !== null && !committed.isRecorded) return
-  const failure = committed === null ? LABELS.unitNotSaved : committed.areMistakesKept ? null : LABELS.cardsNotSaved
+  const notSaved = committed === null ? 'unit' : committed.areMistakesKept ? undefined : 'cards'
+  const summary: LingoUnitSummary = notSaved === undefined ? unit.summary : { ...unit.summary, notSaved }
+  if (notSaved !== undefined) await markNotSaved($, unit.id, summary)
   const state = await read($, wait)
   if (!isClaudeWorking(state) && isKeptOpen(state)) {
     await closeSplit($)
-    $.ui.toast(`${LABELS.modName}: ${failure ?? summaryText(unit.summary, unit.activity)}`)
+    $.ui.toast(`${LABELS.modName}: ${summaryText(summary, unit.activity)}`)
     return
   }
-  if (failure !== null) $.ui.toast(`${LABELS.modName}: ${failure}`)
+  if (notSaved !== undefined) $.ui.toast(`${LABELS.modName}: ${summaryText(summary, unit.activity)}`)
   await focusKey($, 'next-unit')
+}
+
+// The summary of the unit or reading on screen, with what the store would not take.
+function markNotSaved($: EngineInterface, id: string, summary: LingoUnitSummary) {
+  return update($, lesson, (l): LingoLesson => {
+    if (l.unit?.id === id) return { ...l, unit: { ...l.unit, summary } }
+    if (l.reading?.id === id) return { ...l, reading: { ...l.reading, summary } }
+    return l
+  })
 }
 
 // A finished talk unit: its mistakes become cards, numbered by it.
@@ -579,7 +591,11 @@ export const register: Register = (on, options) => {
 
     ticker?.cancel()
     ticker = $.clock.every(1000, async () => {
-      if ((await read($, wait)).pane === 'open') $.ui.invalidate('ui.render')
+      if ((await read($, wait)).pane !== 'open') return
+      // A mirror the store would not give (it failed when the pane opened) is tried again here: a handler may
+      // write state, a render may not.
+      if (!(await read($, paneData)).isLoaded) await refreshPaneData($)
+      $.ui.invalidate('ui.render')
     })
 
     const turnId = e.turnId
@@ -1431,11 +1447,11 @@ export const register: Register = (on, options) => {
       // Every attempt is recorded: a mistake card's in the mistakes, a pack card's in the progress.
       const record = async (cardId: string, isCorrect: boolean) => {
         const at = await nowIso($)
-        if (mistakeOf(cardId) !== undefined) {
-          await modify(storeOf($), MISTAKES, latest => recordMistakeReview(latest, cardId, at, isCorrect))
-        } else {
-          await modify(storeOf($), PACK_PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
-        }
+        const saved =
+          mistakeOf(cardId) !== undefined
+            ? await modify(storeOf($), MISTAKES, latest => recordMistakeReview(latest, cardId, at, isCorrect))
+            : await modify(storeOf($), PACK_PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
+        if (saved === null) $.ui.toast(`${LABELS.modName}: ${LABELS.progressNotSaved}`)
         await refreshPaneData($)
       }
 
@@ -1468,9 +1484,10 @@ export const register: Register = (on, options) => {
         const advanced = nextCard(latest)
         if (advanced.status === 'done') {
           // Finishing the lesson being studied moves the learner on, once.
-          await modify(storeOf($), PACK_PROGRESS, stored =>
+          const moved = await modify(storeOf($), PACK_PROGRESS, stored =>
             latest.lesson === stored.currentLesson ? advanceLesson(stored, DEMO_LESSON_COUNT) : stored,
           )
+          if (moved === null) $.ui.toast(`${LABELS.modName}: ${LABELS.progressNotSaved}`)
           await refreshPaneData($)
         }
         await update($, practice, () => advanced)

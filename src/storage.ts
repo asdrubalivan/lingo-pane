@@ -17,7 +17,10 @@
 //   storage.layout            marks the move from the old `progress` and `mistakes` keys as done
 // The old whole-object keys stay as they were for one release. Until the move is
 // marked done, a read joins both layouts item by item (what the new layout holds
-// wins), so a move that cannot finish never stops a change from being saved.
+// wins; for the mistakes, a usable index is the list), so a move that cannot
+// finish never stops a change from being saved. A key the store cannot read makes
+// the read fail, as any failed read does, rather than count as absent: a change
+// would otherwise write over what could not be read.
 
 import { nextUnit, parseActivityLog, recordUnit, ACTIVITY_STORE_KEY } from './activities'
 import { FRESH_PROGRESS, PROGRESS_STORE_KEY, PROGRESS_VERSION, parseCardProgress, parseLessonNumber, parseProgress } from './lesson'
@@ -111,15 +114,18 @@ async function moveProgress(store: Store) {
   if (old.currentLesson !== FRESH_PROGRESS.currentLesson && (await isAbsent(store, PROGRESS_LESSON_KEY))) {
     await store.set(PROGRESS_LESSON_KEY, { version: PROGRESS_VERSION, currentLesson: old.currentLesson })
   }
-  for (const [id, card] of Object.entries(old.cards)) {
-    if (await isAbsent(store, progressCardKey(id))) await store.set(progressCardKey(id), { version: PROGRESS_VERSION, ...card })
+  const cards = Object.entries(old.cards)
+  const isNew = await Promise.all(cards.map(([id]) => isAbsent(store, progressCardKey(id))))
+  for (const [i, [id, card]] of cards.entries()) {
+    if (isNew[i]) await store.set(progressCardKey(id), { version: PROGRESS_VERSION, ...card })
   }
 }
 
 async function moveMistakes(store: Store) {
   const old = parseMistakes(await store.get(MISTAKES_STORE_KEY))
-  for (const card of old.cards) {
-    if (await isAbsent(store, mistakeKey(card.id))) await store.set(mistakeKey(card.id), { version: MISTAKES_VERSION, ...card })
+  const isNew = await Promise.all(old.cards.map(card => isAbsent(store, mistakeKey(card.id))))
+  for (const [i, card] of old.cards.entries()) {
+    if (isNew[i]) await store.set(mistakeKey(card.id), { version: MISTAKES_VERSION, ...card })
   }
   const current = parseIndex(await store.get(MISTAKES_INDEX_KEY))
   const merged = [...new Set([...old.cards.map(c => c.id), ...current])].slice(-MAX_MISTAKES)
@@ -187,14 +193,16 @@ export function progressOf(cardIds: readonly string[]): Entry<LingoProgress> {
  * key. A change writes the cards that changed, then the index if the list of
  * ids moved (so it never names a card that is not there), then drops the keys
  * of cards that fell off the end. The index is the one key two sessions can
- * still overwrite, and only when both add a new mistake at the same time.
+ * still overwrite, when both change the list of ids at the same time (a new
+ * mistake, or a repeated one moved to the end).
  */
 export const MISTAKES: Entry<LingoMistakes> = {
   empty: NO_MISTAKES,
   read: async store => {
     const isMoved = await migrate(store)
     const raw = await store.get(MISTAKES_INDEX_KEY)
-    // Not moved yet: the old key (which must be readable) lists what the new layout does not list yet.
+    // Not moved yet and no usable index: the old key (which must be readable) is the list. An index, once
+    // there, is the list; a card it names whose own key is missing or bad is read from the old key.
     const old = isMoved ? NO_MISTAKES : parseMistakes(await store.get(MISTAKES_STORE_KEY))
     const ids = versioned(raw, MISTAKES_VERSION) === null && !isMoved ? old.cards.map(c => c.id) : parseIndex(raw)
     const oldCards = new Map(old.cards.map(c => [c.id, c]))
@@ -225,7 +233,11 @@ export const MISTAKES: Entry<LingoMistakes> = {
 
 // --- Reading and changing ---------------------------------------------------
 
-/** What the store holds for the entry; null when it cannot be read (a missing or corrupt value is not a failure: it reads as the entry's empty one). */
+/**
+ * What the store holds for the entry; null when it cannot be read (a missing or
+ * corrupt value is not a failure: it reads as the entry's empty one). For an
+ * entry whose own empty value is null (the setup) the two cannot be told apart.
+ */
 export async function tryLoad<T>(store: Store, entry: Entry<T>): Promise<T | null> {
   try {
     return await entry.read(store)
@@ -320,7 +332,10 @@ export async function commitUnit(
 /**
  * The mistakes of a unit that is not logged (left half done for another one, or
  * a reading's answer that was shown), numbered by the unit that comes next.
+ * False when the store failed and they were not kept.
  */
-export function keepMistakes(store: Store, unit: UnitMistakes, at: string): Promise<boolean> {
-  return load(store, ACTIVITY).then(log => saveMistakes(store, unit, nextUnit(log), at))
+export async function keepMistakes(store: Store, unit: UnitMistakes, at: string): Promise<boolean> {
+  // A log that cannot be read would number the cards 1, and cards numbered 1 never fall due.
+  const log = await tryLoad(store, ACTIVITY)
+  return log !== null && (await saveMistakes(store, unit, nextUnit(log), at))
 }

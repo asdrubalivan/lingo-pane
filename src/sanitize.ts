@@ -50,7 +50,8 @@ const LABELS = String.raw`FIX|TUTOR|SCENARIO|TITLE|TEXT|Q\d`
 // in code and prose, and all a forged one can do is shape a text that is capped.
 const FORGEABLE = String.raw`FIX|TUTOR|SCENARIO`
 const MARKER = new RegExp(String.raw`\b(?:${LABELS})\s*\**\s*:`, 'i')
-const FORGEABLE_MARKERS = new RegExp(String.raw`\b(${FORGEABLE})\s*\**\s*:`, 'gi')
+// In capitals only, as the mod's own formats are written: `fix:` and `Fix:` are everyday words (commit messages, changelogs).
+const FORGEABLE_MARKERS = new RegExp(String.raw`\b(${FORGEABLE})\s*\**\s*:`, 'g')
 
 /** The text holds something a reply-format parser would read as a label. */
 export const hasProtocolMarker = (text: string): boolean => MARKER.test(text)

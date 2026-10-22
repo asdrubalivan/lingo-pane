@@ -184,8 +184,12 @@ export type LingoCorrection = {
 /** What the split is waiting on the tutor for. */
 export type LingoPending = 'opening' | 'reply' | 'help'
 
-/** How a micro-unit went: `✓ 3 sentences, 1 correction saved`. */
-export type LingoUnitSummary = { sentences: number; corrections: number }
+/**
+ * How a micro-unit went: `✓ 3 sentences, 1 correction saved`. `notSaved` is set
+ * when the store would not take the unit (`'unit'`) or only its mistake cards
+ * (`'cards'`), so nothing on screen claims they were saved.
+ */
+export type LingoUnitSummary = { sentences: number; corrections: number; notSaved?: 'unit' | 'cards' }
 
 /** A role-play's setting: from the fixed A1-C2 list (`id`) or made up from the learner's interests (`id` null). */
 export type LingoScenario = {

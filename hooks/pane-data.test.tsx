@@ -175,6 +175,27 @@ test('a store that fails when the mirror is refreshed leaves it as it was, not e
   await pane.unmount()
 })
 
+test('a mirror that could not be loaded is tried again every second while Claude works, and then reads nothing', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { entries, reads, failing } = world(on, ONE_UNIT_DONE)
+  const watch = watchMirror(on)
+  failing.get.add('activity')
+  await openWithCommand($)
+  const pane = await mountPane($)
+  expect(watch.held()).toBeUndefined()
+
+  await $.turn.start({ text: 'build it', turnId: 't1' })
+  failing.get.clear()
+  await clock.advance(1000)
+  await expectMirrorOf(watch.held(), entries)
+
+  await clock.advance(1000)
+  reads.count = 0
+  await clock.advance(3000)
+  expect(reads.count).toBe(0)
+  await pane.unmount()
+})
+
 test('a store that cannot be read when the pane draws shows nothing and breaks nothing, and the next refresh recovers', async ($, on) => {
   mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
   const { entries, failing } = world(on, ONE_UNIT_DONE)

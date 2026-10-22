@@ -126,12 +126,19 @@ export function summarize(unit: LingoUnit): LingoUnitSummary {
   return { sentences: unit.replies, corrections: unit.corrections.length }
 }
 
-/** `✓ 3 sentences, 1 correction saved`; a reading counts questions and cards. */
+/**
+ * `✓ 3 sentences, 1 correction saved`; a reading counts questions and cards.
+ * When the store would not take it the text says so instead of "saved".
+ */
 export function summaryText(summary: LingoUnitSummary, activity: LingoActivity = 'conversation'): string {
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
-  return activity === 'reading'
-    ? `✓ ${plural(summary.sentences, 'question')}, ${plural(summary.corrections, 'card')} saved`
-    : `✓ ${plural(summary.sentences, 'sentence')}, ${plural(summary.corrections, 'correction')} saved`
+  const counts =
+    activity === 'reading'
+      ? `${plural(summary.sentences, 'question')}, ${plural(summary.corrections, 'card')}`
+      : `${plural(summary.sentences, 'sentence')}, ${plural(summary.corrections, 'correction')}`
+  if (summary.notSaved === 'unit') return `${counts} · not saved (storage failed)`
+  if (summary.notSaved === 'cards') return `✓ ${counts} · cards not saved (storage failed)`
+  return `✓ ${counts} saved`
 }
 
 /**

@@ -52,6 +52,7 @@ const world = (on: On, store: Record<string, unknown> = {}) => {
     return { value: undefined }
   })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: '' }))
   return { entries, failing, toasts, requests: () => requests }
 }
 
@@ -115,7 +116,10 @@ test('a store that cannot be written does not break the unit: it closes and says
   await openWithCommand($)
   const pane = await mountPane($)
   await finishUnit(pane)
-  expect(toasts.at(-1)).toBe('lingo-pane: this unit could not be saved (storage failed), so it does not count.')
+  expect(toasts.at(-1)).toBe('lingo-pane: 3 sentences, 1 correction · not saved (storage failed)')
+  // The pane says the same, and never that it was saved.
+  expect(await pane.find({ type: 'Text', text: '3 sentences, 1 correction · not saved (storage failed)' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /✓.*saved$/ })).toBeUndefined()
   expect(entries.has('activity')).toBe(false)
   expect(entries.has('mistakes.index')).toBe(false)
   await pane.unmount()
@@ -128,8 +132,41 @@ test('a unit whose cards cannot be written is counted, and says the cards were n
   await openWithCommand($)
   const pane = await mountPane($)
   await finishUnit(pane)
-  expect(toasts.at(-1)).toBe('lingo-pane: the mistake cards could not be saved (storage failed).')
+  expect(toasts.at(-1)).toBe('lingo-pane: ✓ 3 sentences, 1 correction · cards not saved (storage failed)')
+  expect(await pane.find({ type: 'Text', text: '✓ 3 sentences, 1 correction · cards not saved (storage failed)' })).toBeDefined()
   expect(entries.get('activity')).toMatchObject({ units: 1 })
+  await pane.unmount()
+})
+
+test('a unit that ended while Claude worked and was not saved is not announced as saved when the turn ends', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const { failing, toasts } = world(on)
+  failing.set.add('activity')
+  await openWithCommand($)
+  await $.turn.start({ text: 'build it', turnId: 't1' })
+  await clock.advance(2000)
+  const pane = await mountPane($)
+  await finishUnit(pane)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect(toasts.filter(t => /saved/.test(t) && !/not saved/.test(t))).toEqual([])
+  expect(toasts.at(-1)).toBe('lingo-pane: 3 sentences, 1 correction · not saved (storage failed)')
+  await pane.unmount()
+})
+
+test('a review answer the store would not take says so, and the lesson goes on', async ($, on) => {
+  mock.clock(on, { now: Date.UTC(2026, 9, 2, 12) })
+  const card = { id: 'mistake-old', wrong: 'is', right: 'are', note: 'plural', sentence: 'They is here.', unit: 1, createdAt: '2026-10-01T10:00:00.000Z', reviews: [] }
+  const { failing, toasts } = world(on, {
+    activity: { version: 1, units: 1, lastDoneAt: { conversation: '2026-10-01T10:00:00.000Z' }, done: { conversation: 1 }, recent: [] },
+    mistakes: { version: 1, cards: [card] },
+  })
+  failing.set.add('mistakes.card.mistake-old')
+  const pane = await mountPane($)
+  await pane.press({ key: 'switch' })
+  await pane.press({ key: 'switch-review' })
+  await pane.input({ key: 'answer-0', text: '' })
+  expect(toasts.at(-1)).toBe('lingo-pane: your progress could not be saved (storage failed).')
+  expect(await pane.find({ type: 'Text', text: 'Answer: are' })).toBeDefined()
   await pane.unmount()
 })
 
@@ -156,7 +193,7 @@ test('a store that cannot move the old layout leaves it alone, the unit still cl
   await openWithCommand($)
   const pane = await mountPane($)
   await finishUnit(pane)
-  expect(toasts.at(-1)).toBe('lingo-pane: the mistake cards could not be saved (storage failed).')
+  expect(toasts.at(-1)).toBe('lingo-pane: ✓ 3 sentences, 1 correction · cards not saved (storage failed)')
   expect(entries.get('mistakes')).toEqual(old)
   expect(entries.has('storage.layout')).toBe(false)
   expect(entries.has('mistakes.index')).toBe(false)
