@@ -86,6 +86,7 @@ import {
   TUTOR_TIMEOUT_MS,
   helpPrompt,
   openingPrompt,
+  parseHelp,
   parseTutorTurn,
   replyPrompt,
   tutorSystem,
@@ -407,8 +408,8 @@ async function sendHelp($: EngineInterface, setup: LingoSetup) {
   await updateUnit($, before.id, () => asked)
   const ctx = tutorContext(setup, asked, await sessionMaterial($, setup))
   const reply = await callTutor($, setup, tutorSystem(ctx), helpPrompt(ctx, asked))
-  const text = reply.isAnswered ? reply.text.trim() : ''
-  await updateUnit($, before.id, u => (u.pending !== 'help' ? u : text === '' ? withoutTutor(u, LABELS.tutorSilentHelp) : withHelp(u, text)))
+  const text = reply.isAnswered ? parseHelp(reply.text) : null
+  await updateUnit($, before.id, u => (u.pending !== 'help' ? u : text === null ? withoutTutor(u, LABELS.tutorSilentHelp) : withHelp(u, text)))
 }
 
 export const register: Register = (on, options) => {

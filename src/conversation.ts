@@ -11,6 +11,10 @@ export const UNIT_REPLIES = 3
 export const MAX_REPLY_LENGTH = 400
 /** Lines a tutor reply may add to the screen. */
 export const MAX_TUTOR_LENGTH = 600
+/** The wrong or the right form of a correction. */
+export const MAX_FIX_LENGTH = 80
+/** The tutor's note on a correction. */
+export const MAX_NOTE_LENGTH = 160
 
 export const IDLE_LESSON: LingoLesson = { activity: 'conversation', unit: null, reading: null, isMenuOpen: false }
 

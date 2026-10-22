@@ -6,8 +6,14 @@
 
 import { scenariosFor } from './content/roleplay-scenarios'
 import type { RoleplayScenario } from './content/roleplay-scenarios'
+import { MAX_MODEL_REPLY, sanitizeModelText } from './sanitize'
 import type { TutorContext } from './tutor'
 import type { LingoLevel, LingoScenario } from '../types'
+
+// Caps on a made-up scenario: its situation and roles are re-injected into every later turn.
+export const MAX_SCENARIO_TITLE_LENGTH = 60
+export const MAX_SCENARIO_SITUATION_LENGTH = 300
+export const MAX_SCENARIO_ROLE_LENGTH = 150
 
 export type ScenarioPick = { kind: 'fixed'; scenario: LingoScenario } | { kind: 'generated' }
 
@@ -43,7 +49,7 @@ export function generatedOpeningPrompt(ctx: TutorContext): string {
 
 /** The SCENARIO line of a made-up role-play, or null when it is not there or incomplete. */
 export function parseScenario(text: string): LingoScenario | null {
-  const line = text.split('\n').find(l => /^\s*\**\s*SCENARIO\s*\**\s*:/i.test(l))
+  const line = sanitizeModelText(text, MAX_MODEL_REPLY).split('\n').find(l => /^\s*\**\s*SCENARIO\s*\**\s*:/i.test(l))
   if (line === undefined) return null
   const parts = line
     .replace(/^\s*\**\s*SCENARIO\s*\**\s*:\s*\**\s*/i, '')
@@ -51,5 +57,11 @@ export function parseScenario(text: string): LingoScenario | null {
     .map(p => p.trim())
   const [title, situation, tutorRole, learnerRole] = parts
   if (parts.length < 4 || [title, situation, tutorRole, learnerRole].some(p => p === undefined || p === '')) return null
-  return { id: null, title: title!, situation: situation!, tutorRole: tutorRole!, learnerRole: learnerRole! }
+  return {
+    id: null,
+    title: sanitizeModelText(title!, MAX_SCENARIO_TITLE_LENGTH).trim(),
+    situation: sanitizeModelText(situation!, MAX_SCENARIO_SITUATION_LENGTH).trim(),
+    tutorRole: sanitizeModelText(tutorRole!, MAX_SCENARIO_ROLE_LENGTH).trim(),
+    learnerRole: sanitizeModelText(learnerRole!, MAX_SCENARIO_ROLE_LENGTH).trim(),
+  }
 }

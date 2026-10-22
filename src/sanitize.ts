@@ -3,6 +3,9 @@
 // first: control characters and escape sequences out (line breaks kept), then
 // a length cap. Pure.
 
+/** A whole model reply is cut here before it is read; each field has a cap of its own. */
+export const MAX_MODEL_REPLY = 6000
+
 // Escape sequences, payload included, so a window title or a clipboard write
 // leaves nothing behind. Introduced by ESC or by the single-byte C1 form.
 const SEQUENCES = new RegExp(

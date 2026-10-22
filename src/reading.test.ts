@@ -1,6 +1,16 @@
 import { expect, test } from 'claude-code/testing'
 
-import { answerReading, isReadingAnswerRight, parseReading, readingPrompt, showReadingAnswer } from './reading'
+import {
+  MAX_READING_ANSWER_LENGTH,
+  MAX_READING_QUESTION_LENGTH,
+  MAX_READING_TEXT_LENGTH,
+  MAX_READING_TITLE_LENGTH,
+  answerReading,
+  isReadingAnswerRight,
+  parseReading,
+  readingPrompt,
+  showReadingAnswer,
+} from './reading'
 import type { TutorContext } from './tutor'
 
 const REPLY = [
@@ -70,4 +80,27 @@ test('right answers move on, wrong ones count a miss, an empty Enter shows it; t
   // Nothing moves after the end.
   expect(answerReading(done, 'x')).toBe(done)
   expect(showReadingAnswer(done)).toBe(done)
+})
+
+test('control sequences are stripped from the whole reading and every field is capped', () => {
+  const reading = parseReading(
+    'r',
+    [
+      '\u001b]0;pwned\u0007TITLE: A \u001b[31mclub\u001b[0m',
+      'TEXT: Ana\u0007 goes\u001b[2J there.',
+      'Q1: Who\u0000? :: A\u001bcna',
+      'Q2: Where? :: there',
+    ].join('\n'),
+  )
+  expect(reading).toMatchObject({ title: 'A club', text: 'Ana goes there.' })
+  expect(reading?.questions.map(q => [q.question, q.answer])).toEqual([['Who?', 'Ana'], ['Where?', 'there']])
+
+  const long = parseReading(
+    'r',
+    [`TITLE: ${'t'.repeat(500)}`, `TEXT: ${'x'.repeat(2500)}`, `Q1: ${'q'.repeat(900)} :: ${'a'.repeat(900)}`, 'Q2: B? :: b'].join('\n'),
+  )
+  expect(long?.title.length).toBe(MAX_READING_TITLE_LENGTH)
+  expect(long?.text.length).toBe(MAX_READING_TEXT_LENGTH)
+  expect(long?.questions[0]?.question.length).toBe(MAX_READING_QUESTION_LENGTH)
+  expect(long?.questions[0]?.answer.length).toBe(MAX_READING_ANSWER_LENGTH)
 })

@@ -3,10 +3,16 @@
 // makes a card of the question. Pure: hooks/register.tsx makes the call.
 
 import { normalizeAnswer } from './lesson'
+import { MAX_MODEL_REPLY, sanitizeModelText } from './sanitize'
 import type { TutorContext } from './tutor'
 import type { LingoLevel, LingoReading } from '../types'
 
 export const READING_MAX_TOKENS = 700
+// Caps on what the tutor's reading may put on the screen and in the store.
+export const MAX_READING_TITLE_LENGTH = 80
+export const MAX_READING_TEXT_LENGTH = 1500
+export const MAX_READING_QUESTION_LENGTH = 200
+export const MAX_READING_ANSWER_LENGTH = 80
 
 /** How long the text is, by level. */
 export const READING_WORDS: Readonly<Record<LingoLevel, string>> = {
@@ -46,18 +52,22 @@ export function readingPrompt(ctx: TutorContext): string {
 
 /** The tutor's reading as a reading on screen; null when the text or the questions are missing. */
 export function parseReading(id: string, reply: string): LingoReading | null {
-  const lines = reply.split('\n').map(l => l.replace(/^\s*\**\s*/, '').replace(/\*\*/g, ''))
-  const title = lines.find(l => /^TITLE\s*:/i.test(l))?.replace(/^TITLE\s*:\s*/i, '').trim() ?? ''
+  const lines = sanitizeModelText(reply, MAX_MODEL_REPLY).split('\n').map(l => l.replace(/^\s*\**\s*/, '').replace(/\*\*/g, ''))
+  const title = sanitizeModelText(lines.find(l => /^TITLE\s*:/i.test(l))?.replace(/^TITLE\s*:\s*/i, '').trim() ?? '', MAX_READING_TITLE_LENGTH).trim()
   const textAt = lines.findIndex(l => /^TEXT\s*:/i.test(l))
   const firstQ = lines.findIndex(l => /^Q\d\s*:/i.test(l))
   const textLines = textAt === -1 ? [] : lines.slice(textAt, firstQ === -1 ? undefined : firstQ)
-  const text = textLines.join(' ').replace(/^TEXT\s*:\s*/i, '').replace(/\s+/g, ' ').trim()
+  const text = sanitizeModelText(textLines.join(' ').replace(/^TEXT\s*:\s*/i, '').replace(/\s+/g, ' ').trim(), MAX_READING_TEXT_LENGTH).trim()
   const questions = lines
     .filter(l => /^Q\d\s*:/i.test(l))
     .map(l => l.replace(/^Q\d\s*:\s*/i, '').split('::').map(p => p.trim()))
     .filter(([q, a]) => q !== undefined && q !== '' && a !== undefined && a !== '')
     .slice(0, 3)
-    .map(([question, answer]) => ({ question: question!, answer: answer!, outcome: null }))
+    .map(([question, answer]) => ({
+      question: sanitizeModelText(question!, MAX_READING_QUESTION_LENGTH).trim(),
+      answer: sanitizeModelText(answer!, MAX_READING_ANSWER_LENGTH).trim(),
+      outcome: null,
+    }))
   if (text === '' || questions.length < 2) return null
   return { id, title: title === '' ? 'Reading' : title, text, questions, index: 0, misses: 0, isPending: false, notice: null, summary: null }
 }
