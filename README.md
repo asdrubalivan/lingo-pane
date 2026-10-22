@@ -41,4 +41,5 @@ npm run check   # type-check, then the tests
 
 - `npm test` runs `claude plugin test .`, the plugin's test kit. The Claude Code version is pinned in `package.json` (2.1.287, the one the types come from): newer versions have changed the engine's behaviour, and two permission-ask tests fail on 2.1.308, so bump the pin on purpose, not by accident.
 - `npm run typecheck` needs the plugin API's declarations in `.claude-plugin/types/`. They are written by the Claude Code engine when it loads the mod, and git ignores them because they belong to the installed version. The script creates them for you by loading the mod once with an empty `HOME` (no credentials, no model call). `npm run types` writes them again after you change the pinned version.
-- CI (`.github/workflows/ci.yml`) runs the same two commands on every pull request.
+- `npm run check:readmes` compares the headings of `README.md`, `README.es.md` and `README.fr.md` (same count and levels, in the same order), so edit the three in the same commit; `check` runs it.
+- CI (`.github/workflows/ci.yml`) runs `npm run check` on every pull request.
