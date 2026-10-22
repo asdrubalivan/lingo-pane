@@ -412,8 +412,9 @@ async function sendHelp($: EngineInterface, setup: LingoSetup) {
 }
 
 export const register: Register = (on, options) => {
-  const target = String(options.targetLanguage)
-  const native = String(options.nativeLanguage)
+  // Validated by draftFromConfig, where they are used.
+  const target = options.targetLanguage
+  const native = options.nativeLanguage
 
   // Timer handles live in module variables: a hot reload drops them together
   // with the timers themselves (the engine cancels pending waits on reload).
