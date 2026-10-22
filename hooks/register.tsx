@@ -5,7 +5,6 @@ import { DEMO_CARDS, DEMO_LESSON_COUNT, DEMO_PACK_TITLE } from '../src/content/d
 import type { LessonQueue } from '../src/lesson'
 import {
   IDLE_PRACTICE,
-  PROGRESS_STORE_KEY,
   advanceLesson,
   afterAnswer,
   buildQueue,
@@ -13,7 +12,6 @@ import {
   isFinished,
   leaksAnswer,
   nextCard,
-  parseProgress,
   recordAttempt,
   reveal,
   startPractice,
@@ -29,7 +27,6 @@ import {
   CLOSED_WIZARD,
   DEFAULT_SPLIT_SHARE,
   LEVELS,
-  SETUP_STORE_KEY,
   SPLIT_SHARES,
   STEPS,
   STRATEGY_AXES,
@@ -38,8 +35,6 @@ import {
   draftFromConfig,
   draftFromSetup,
   parseInterests,
-  parseSetup,
-  resolveSetup,
   stepProblem,
   withTheme,
   wizardTransition,
@@ -62,11 +57,9 @@ import type { Viewport } from '../src/split'
 import type { LingoActivity, LingoLesson, LingoPractice, LingoReading, LingoSetup, LingoTutorState, LingoUnit, LingoUnitSummary } from '../types'
 import {
   ACTIVITIES,
-  ACTIVITY_STORE_KEY,
   activityLabel,
   levelHint,
-  parseActivityLog,
-  recordUnit,
+  nextUnit,
   suggestActivity,
 } from '../src/activities'
 import {
@@ -95,6 +88,8 @@ import {
 import type { TutorContext } from '../src/tutor'
 import { listenUrl } from '../src/listen'
 import { MAX_ANSWER_EXCERPT, MAX_PROMPT_EXCERPT, NO_CONTEXT, contextForTutor, excerpt } from '../src/context'
+import { ACTIVITY, MISTAKES, PROGRESS, SETUP, commitUnit, keepMistakes, load, modify, save } from '../src/storage'
+import type { FinishedUnit, Store } from '../src/storage'
 import { generatedOpeningPrompt, parseScenario, pickScenario } from '../src/roleplay'
 import {
   READING_MAX_TOKENS,
@@ -106,16 +101,12 @@ import {
 } from '../src/reading'
 import {
   MAX_WOVEN,
-  MISTAKES_STORE_KEY,
-  addCorrections,
   dueMistakes,
   isFormCard,
   mistakeAsCard,
-  parseMistakes,
   pickForTurn,
   recordMistakeReview,
   spinnerLine,
-  wovenOutcome,
 } from '../src/mistakes'
 
 const PANE = 'lingo'
@@ -155,7 +146,7 @@ const HINT_TIMEOUT_MS = 20000
 // The setup in force: the mirror once loaded, the store otherwise.
 async function currentSetup($: EngineInterface): Promise<LingoSetup | null> {
   const cache = await read($, setupCache)
-  return resolveSetup(cache, cache.isLoaded ? undefined : await $.store.get(SETUP_STORE_KEY))
+  return cache.isLoaded ? cache.setup : load(storeOf($), SETUP)
 }
 
 function dispatchWait($: EngineInterface, event: WaitEvent) {
@@ -172,6 +163,12 @@ async function touch($: EngineInterface) {
   const state = await read($, wait)
   if (state.pane === 'open' && !state.isTouched) await dispatchWait($, { type: 'touched' })
 }
+
+// `$` cannot be handed to the storage module across an import: it gets the two calls.
+const storeOf = ($: EngineInterface): Store => ({
+  get: key => $.store.get(key),
+  set: (key, value) => $.store.set(key, value),
+})
 
 const nowIso = async ($: EngineInterface) => new Date(await $.clock.now()).toISOString()
 
@@ -227,8 +224,8 @@ async function updateUnit($: EngineInterface, id: string, change: (unit: LingoUn
 // their interests in the same call.
 async function openTalkUnit($: EngineInterface, setup: LingoSetup, activity: LingoUnit['activity']) {
   // The tutor weaves in a couple of the mistakes due at this unit.
-  const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
-  const due = dueMistakes(parseMistakes(await $.store.get(MISTAKES_STORE_KEY)), log.units + 1).filter(isFormCard)
+  const log = await load(storeOf($), ACTIVITY)
+  const due = dueMistakes(await load(storeOf($), MISTAKES), nextUnit(log)).filter(isFormCard)
   const woven = due.slice(0, MAX_WOVEN).map(c => ({ id: c.id, wrong: c.wrong, right: c.right }))
   const pick = activity === 'roleplay' ? pickScenario(setup.level, setup.interests, log.done.roleplay ?? 0) : null
   const scenario = pick?.kind === 'fixed' ? pick.scenario : null
@@ -282,12 +279,13 @@ async function answerQuestion($: EngineInterface, value: string) {
   const after = isShown ? showReadingAnswer(before) : answerReading(before, value)
   await update($, lesson, (l): LingoLesson => (l.reading?.id === before.id ? { ...l, reading: after } : l))
   if (isShown) {
-    const unitNumber = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)).units + 1
     const card = { wrong: '', right: question.answer, note: before.title, sentence: question.question }
-    const mistakes = parseMistakes(await $.store.get(MISTAKES_STORE_KEY))
-    await $.store.set(MISTAKES_STORE_KEY, addCorrections(mistakes, [card], unitNumber, await nowIso($)))
+    await keepMistakes(storeOf($), { corrections: [card], woven: [], lines: [] }, await nowIso($))
   }
-  if (after.summary !== null) await finishActivity($, 'reading', after.summary)
+  // Its cards were kept as the answers were shown: only the log is left to record.
+  if (after.summary !== null) {
+    await finishActivity($, { id: after.id, activity: 'reading', summary: after.summary, corrections: [], woven: [], lines: [] })
+  }
 }
 
 // The review: the built-in pack's Pimsleur queue, started at once (zero clicks).
@@ -297,16 +295,16 @@ async function startReview($: EngineInterface) {
   if (session.lesson !== null && session.status !== 'done') return
   const queue = await reviewQueue($)
   if (queue.recall.length + queue.fresh.length === 0) return
-  const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+  const latest = await load(storeOf($), PROGRESS)
   await update($, practice, () => startPractice(queue, latest.currentLesson))
   await focusKey($, 'answer-0')
 }
 
 // The review: the mistakes due at the next unit first, then the built-in pack's Pimsleur lesson.
 async function reviewQueue($: EngineInterface): Promise<LessonQueue> {
-  const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
-  const due = dueMistakes(parseMistakes(await $.store.get(MISTAKES_STORE_KEY)), log.units + 1).map(c => c.id)
-  const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+  const log = await load(storeOf($), ACTIVITY)
+  const due = dueMistakes(await load(storeOf($), MISTAKES), nextUnit(log)).map(c => c.id)
+  const latest = await load(storeOf($), PROGRESS)
   const pack = isFinished(latest, DEMO_LESSON_COUNT)
     ? { recall: [], fresh: [] }
     : buildQueue(DEMO_CARDS, latest, new Date(await $.clock.now()))
@@ -319,7 +317,7 @@ async function startActivity($: EngineInterface, setup: LingoSetup, activity: Li
   // A talk unit left half done for another one closes here: its mistakes are kept.
   const left = (await read($, lesson)).unit
   if (left !== null && left.summary === null) {
-    await saveUnitMistakes($, left, parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)).units + 1)
+    await keepMistakes(storeOf($), left, await nowIso($))
   }
   return openTalkUnit($, setup, activity)
 }
@@ -340,21 +338,8 @@ async function ensureLesson($: EngineInterface, setup: LingoSetup) {
     }
     return
   }
-  const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
+  const log = await load(storeOf($), ACTIVITY)
   return startActivity($, setup, suggestActivity(log, AVAILABLE_ACTIVITIES))
-}
-
-// A unit's mistakes become cards (numbered by the unit), and the woven ones count as reviewed.
-async function saveUnitMistakes($: EngineInterface, unit: LingoUnit, unitNumber: number) {
-  if (unit.corrections.length === 0 && unit.woven.length === 0) return
-  const at = await nowIso($)
-  // Re-read before writing: the store is shared between sessions.
-  let mistakes = parseMistakes(await $.store.get(MISTAKES_STORE_KEY))
-  for (const card of unit.woven) {
-    const outcome = wovenOutcome(unit.lines, card)
-    if (outcome !== null) mistakes = recordMistakeReview(mistakes, card.id, at, outcome)
-  }
-  await $.store.set(MISTAKES_STORE_KEY, addCorrections(mistakes, unit.corrections, unitNumber, at))
 }
 
 // The summary of the activity on screen when its unit is over; null while one runs.
@@ -366,27 +351,25 @@ function finishedSummary(current: LingoLesson): { activity: LingoActivity; summa
   return { activity: current.unit.activity, summary: current.unit.summary }
 }
 
-// A finished unit of any activity: logged; with Claude idle, a split in use
-// closes and says how it went, else the next activity is one press away.
-async function finishActivity($: EngineInterface, activity: LingoActivity, summary: LingoUnitSummary) {
-  const log = recordUnit(parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)), activity, summary, await nowIso($))
-  await $.store.set(ACTIVITY_STORE_KEY, log)
+// A finished unit of any activity: recorded once (log and mistakes together); with
+// Claude idle, a split in use closes and says how it went, else the next activity is one press away.
+async function finishActivity($: EngineInterface, unit: FinishedUnit) {
+  const committed = await commitUnit(storeOf($), unit, await nowIso($))
+  // Already recorded (a repeated event): the learner has been told.
+  if (committed !== null && !committed.isRecorded) return
   const state = await read($, wait)
   if (!isClaudeWorking(state) && isKeptOpen(state)) {
     await closeSplit($)
-    $.ui.toast(`${LABELS.modName}: ${summaryText(summary, activity)}`)
-    return log
+    $.ui.toast(`${LABELS.modName}: ${summaryText(unit.summary, unit.activity)}`)
+    return
   }
   await focusKey($, 'next-unit')
-  return log
 }
 
 // A finished talk unit: its mistakes become cards, numbered by it.
 async function finishUnit($: EngineInterface, unit: LingoUnit) {
   if (unit.summary === null) return
-  const units = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY)).units + 1
-  await saveUnitMistakes($, unit, units)
-  await finishActivity($, unit.activity, unit.summary)
+  await finishActivity($, { ...unit, summary: unit.summary })
 }
 
 // The learner's line: shown at once, then the tutor's answer.
@@ -467,7 +450,7 @@ export const register: Register = (on, options) => {
     })
 
     // Load what is saved into the mirror; a missing or unreadable value is pending.
-    const setup = parseSetup(await $.store.get(SETUP_STORE_KEY))
+    const setup = await load(storeOf($), SETUP)
     await update($, setupCache, () => ({ isLoaded: true, setup }))
     if (setup === null) $.ui.toast(LABELS.setupPendingToast)
 
@@ -480,7 +463,7 @@ export const register: Register = (on, options) => {
   on('classic.SessionStart', async ($, e, next) => {
     if (e.source === 'startup' || e.source === 'compact') return next(e)
 
-    const setup = parseSetup(await $.store.get(SETUP_STORE_KEY))
+    const setup = await load(storeOf($), SETUP)
     await update($, setupCache, () => ({ isLoaded: true, setup }))
     if (setup === null) $.ui.toast(LABELS.setupPendingToast)
 
@@ -495,12 +478,12 @@ export const register: Register = (on, options) => {
     const setup = await currentSetup($)
 
     if (parsed.kind === 'theme') {
-      // Re-read the store before writing: another session may have saved since.
-      const latest = parseSetup(await $.store.get(SETUP_STORE_KEY))
-      if (latest === null) return { text: LABELS.themeNeedsSetup }
-      const changed = withTheme(latest, parsed.theme)
-      await $.store.set(SETUP_STORE_KEY, changed)
-      await update($, setupCache, () => ({ isLoaded: true, setup: changed }))
+      // Re-reads the store before writing: another session may have saved since.
+      // A store that fails is told like a setup that is not there.
+      const changed = await modify(storeOf($), SETUP, latest => (latest === null ? null : withTheme(latest, parsed.theme)))
+      if (changed === null || changed.after === null) return { text: LABELS.themeNeedsSetup }
+      const saved = changed.after
+      await update($, setupCache, () => ({ isLoaded: true, setup: saved }))
       return { text: LABELS.themeSet(themeByName(parsed.theme).label) }
     }
 
@@ -548,8 +531,8 @@ export const register: Register = (on, options) => {
       // The Spinner's card for this turn: one of the learner's own mistakes, due ones first.
       const setup = await currentSetup($)
       if (setup !== null) {
-        const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
-        const mistake = pickForTurn(parseMistakes(await $.store.get(MISTAKES_STORE_KEY)), log.units + 1, turnId)
+        const log = await load(storeOf($), ACTIVITY)
+        const mistake = pickForTurn(await load(storeOf($), MISTAKES), nextUnit(log), turnId)
         await update($, spinnerCard, () => ({ turnId, text: mistake === null ? null : spinnerLine(mistake) }))
       }
 
@@ -826,7 +809,7 @@ export const register: Register = (on, options) => {
         const latest = await read($, setupWizard)
         const built = buildSetup(latest.draft ?? defaults, new Date(await $.clock.now()).toISOString())
         if (built === null) return
-        await $.store.set(SETUP_STORE_KEY, built)
+        if (!(await save(storeOf($), SETUP, built))) return
         await update($, setupCache, () => ({ isLoaded: true, setup: built }))
         await update($, setupWizard, () => CLOSED_WIZARD)
         $.ui.toast(LABELS.setupSaved)
@@ -1133,7 +1116,7 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const log = parseActivityLog(await $.store.get(ACTIVITY_STORE_KEY))
+    const log = await load(storeOf($), ACTIVITY)
     const suggested = suggestActivity(log, AVAILABLE_ACTIVITIES)
     const nextButton = (
       <Button
@@ -1366,8 +1349,8 @@ export const register: Register = (on, options) => {
     async function drawReview() {
       const learner = setup as LingoSetup
       const session = await read($, practice)
-      const progress = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-      const mistakes = parseMistakes(await $.store.get(MISTAKES_STORE_KEY))
+      const progress = await load(storeOf($), PROGRESS)
+      const mistakes = await load(storeOf($), MISTAKES)
       const mistakeOf = (id: string | undefined) => mistakes.cards.find(c => c.id === id)
       const cardOf = (id: string | undefined) => {
         const mistake = mistakeOf(id)
@@ -1379,7 +1362,7 @@ export const register: Register = (on, options) => {
 
       const start = async () => {
         await touch($)
-        const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
+        const latest = await load(storeOf($), PROGRESS)
         const queue = await reviewQueue($)
         await update($, practice, () => startPractice(queue, latest.currentLesson))
         await focusKey($, 'answer-0')
@@ -1389,12 +1372,10 @@ export const register: Register = (on, options) => {
       const record = async (cardId: string, isCorrect: boolean) => {
         const at = await nowIso($)
         if (mistakeOf(cardId) !== undefined) {
-          const latest = parseMistakes(await $.store.get(MISTAKES_STORE_KEY))
-          await $.store.set(MISTAKES_STORE_KEY, recordMistakeReview(latest, cardId, at, isCorrect))
+          await modify(storeOf($), MISTAKES, latest => recordMistakeReview(latest, cardId, at, isCorrect))
           return
         }
-        const latest = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-        await $.store.set(PROGRESS_STORE_KEY, recordAttempt(latest, cardId, at, isCorrect))
+        await modify(storeOf($), PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
       }
 
       const showAnswer = async () => {
@@ -1426,10 +1407,9 @@ export const register: Register = (on, options) => {
         const advanced = nextCard(latest)
         if (advanced.status === 'done') {
           // Finishing the lesson being studied moves the learner on, once.
-          const stored = parseProgress(await $.store.get(PROGRESS_STORE_KEY))
-          if (latest.lesson === stored.currentLesson) {
-            await $.store.set(PROGRESS_STORE_KEY, advanceLesson(stored, DEMO_LESSON_COUNT))
-          }
+          await modify(storeOf($), PROGRESS, stored =>
+            latest.lesson === stored.currentLesson ? advanceLesson(stored, DEMO_LESSON_COUNT) : stored,
+          )
         }
         await update($, practice, () => advanced)
         // The button that was pressed holds the ring: hand it to the new field.

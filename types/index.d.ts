@@ -262,7 +262,8 @@ export type LingoActivityLog = {
   /** How many units of each activity were finished (role-play scenarios rotate by it). */
   done: Partial<Record<LingoActivity, number>>
   /** The last 20 finished units, oldest first. */
-  recent: { activity: LingoActivity; at: string; sentences: number; corrections: number }[]
+  /** `id` tells a unit already recorded from a new one; logs written before it have none. */
+  recent: { activity: LingoActivity; at: string; sentences: number; corrections: number; id?: string }[]
 }
 
 /** A card made from a mistake: the learner's line, the wrong words and the right ones. */
