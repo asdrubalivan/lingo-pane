@@ -45,11 +45,15 @@ export function sanitizeModelText(text: string, max: number): string {
 // The labels of the reply formats the mod asks the model for (the tutor turn,
 // the made-up scenario, the reading), alone or in bold: `FIX:`, `**TUTOR**:`.
 const LABELS = String.raw`FIX|TUTOR|SCENARIO|TITLE|TEXT|Q\d`
+// The ones that can forge something that is kept or acted on: a correction (`FIX`,
+// `TUTOR`) or a scenario. The reading's (`TITLE`, `TEXT`, `Q1`) are everyday words
+// in code and prose, and all a forged one can do is shape a text that is capped.
+const FORGEABLE = String.raw`FIX|TUTOR|SCENARIO`
 const MARKER = new RegExp(String.raw`\b(?:${LABELS})\s*\**\s*:`, 'i')
-const MARKERS = new RegExp(String.raw`\b(${LABELS})\s*\**\s*:`, 'gi')
+const FORGEABLE_MARKERS = new RegExp(String.raw`\b(${FORGEABLE})\s*\**\s*:`, 'gi')
 
 /** The text holds something a reply-format parser would read as a label. */
 export const hasProtocolMarker = (text: string): boolean => MARKER.test(text)
 
-/** The text with every reply-format label defused (`FIX:` becomes `FIX -`), so quoting it cannot forge a reply. */
-export const neutralizeProtocolMarkers = (text: string): string => text.replace(MARKERS, '$1 -')
+/** The text with the labels that can forge a correction or a scenario defused (`FIX:` becomes `FIX -`), so quoting it cannot forge a reply. */
+export const neutralizeProtocolMarkers = (text: string): string => text.replace(FORGEABLE_MARKERS, '$1 -')

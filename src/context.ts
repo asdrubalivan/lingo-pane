@@ -39,8 +39,9 @@ const DELIMITER_RUN = new RegExp(`${EXCERPT_DELIMITER.charAt(0)}{${EXCERPT_DELIM
 
 /**
  * The text with what looks like a secret replaced, the prompt delimiter and the
- * reply-format labels (`FIX:`, `TUTOR:`) defused so it can neither close its
- * block nor forge a reply, whitespace collapsed, and cut to `max`.
+ * labels that can forge a correction or a scenario (`FIX:`, `TUTOR:`,
+ * `SCENARIO:`) defused so it can neither close its block nor forge a reply,
+ * whitespace collapsed, and cut to `max`.
  */
 export function excerpt(text: string, max: number): string | null {
   let clean = text
