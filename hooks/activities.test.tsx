@@ -154,7 +154,7 @@ test('a reading the tutor did not write says so and offers to go on', async ($, 
   const pane = await mountPane($)
   await pane.press({ key: 'switch' })
   await pane.press({ key: 'switch-reading' })
-  expect(await pane.find({ type: 'Text', text: /did not write the text/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /text was not written/ })).toBeDefined()
   expect(await pane.find({ key: 'next-unit' })).toBeDefined()
   expect(await pane.find({ key: 'reading-answer' })).toBeUndefined()
   await pane.unmount()
