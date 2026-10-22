@@ -8,6 +8,9 @@ import type { LingoLevel, LingoReading } from '../types'
 
 export const READING_MAX_TOKENS = 700
 
+/** Words beyond the answer a right reply may carry: enough for "it was on", too few to list candidates. */
+export const READING_MAX_EXTRA_WORDS = 3
+
 /** How long the text is, by level. */
 export const READING_WORDS: Readonly<Record<LingoLevel, string>> = {
   A1: '40-60',
@@ -62,11 +65,12 @@ export function parseReading(id: string, reply: string): LingoReading | null {
   return { id, title: title === '' ? 'Reading' : title, text, questions, index: 0, misses: 0, isPending: false, notice: null, summary: null }
 }
 
-/** Right when the learner's words hold the answer (case, punctuation and extra words aside). */
+/** Right when the learner's words hold the answer (case and punctuation aside) with only a few extra words. */
 export function isReadingAnswerRight(given: string, answer: string): boolean {
   const g = normalizeAnswer(given)
   const a = normalizeAnswer(answer)
-  return g !== '' && a !== '' && (g === a || ` ${g} `.includes(` ${a} `))
+  if (g === '' || a === '' || !` ${g} `.includes(` ${a} `)) return false
+  return g.split(' ').length - a.split(' ').length <= READING_MAX_EXTRA_WORDS
 }
 
 /** The learner answered the question on screen. */

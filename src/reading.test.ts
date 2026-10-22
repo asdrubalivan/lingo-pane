@@ -55,6 +55,14 @@ test('an answer is right when the learner\'s words hold it', () => {
   expect(isReadingAnswerRight('', 'Tuesday')).toBe(false)
 })
 
+test('a list of candidate words is not an answer, a few extra words are', () => {
+  expect(isReadingAnswerRight('Monday, Tuesday, Wednesday, Thursday, Friday', 'Tuesday')).toBe(false)
+  expect(isReadingAnswerRight('library museum park Tuesday school cinema', 'Tuesday')).toBe(false)
+  expect(isReadingAnswerRight('It was on Tuesday', 'Tuesday')).toBe(true)
+  expect(isReadingAnswerRight('It is the old library.', 'old library')).toBe(true)
+  expect(isReadingAnswerRight('I think it is the old library', 'old library')).toBe(false)
+})
+
 test('right answers move on, wrong ones count a miss, an empty Enter shows it; the end sums up', () => {
   const reading = parseReading('r1', REPLY)!
   const missed = answerReading(reading, 'Monday')
