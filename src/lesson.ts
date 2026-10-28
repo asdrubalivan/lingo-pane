@@ -1,8 +1,7 @@
 // Pure logic of the practice session: answer matching, hints, progress and the
 // queue. No `$`, no I/O; inputs are never mutated.
 
-import { dueCards } from './review/pimsleur'
-import type { Card, Progress } from './strategies'
+import type { Card, Progress, ReviewAlgorithm } from './strategies'
 import type { LingoPractice, LingoProgress } from '../types'
 
 export const PROGRESS_STORE_KEY = 'progress'
@@ -109,10 +108,10 @@ function toList(progress: LingoProgress): Progress[] {
 
 export type LessonQueue = { recall: string[]; fresh: string[] }
 
-/** Pimsleur recall block (n-1, n-3, n-7), then the new cards of the current lesson. */
-export function buildQueue(cards: readonly Card[], progress: LingoProgress, now: Date): LessonQueue {
+/** The cards the review algorithm brings back (Pimsleur: n-1, n-3, n-7), then the new cards of the current lesson. */
+export function buildQueue(cards: readonly Card[], progress: LingoProgress, now: Date, algorithm: ReviewAlgorithm): LessonQueue {
   const all = [...cards]
-  const recall = dueCards(all, toList(progress), { now, currentLesson: progress.currentLesson }).map(c => c.id)
+  const recall = algorithm.dueCards(all, toList(progress), { now, currentLesson: progress.currentLesson }).map(c => c.id)
   const fresh = all
     .filter(c => c.lesson === progress.currentLesson)
     .map(c => c.id)

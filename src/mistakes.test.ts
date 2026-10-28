@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { pimsleur } from './review/pimsleur'
 import {
   NO_MISTAKES,
   addCorrections,
@@ -44,11 +45,11 @@ test('the stored cards are validated, and capped', () => {
 
 test('Pimsleur by unit: a mistake from unit n is due at n+1, n+3 and n+7, failed ones first', () => {
   const store = addCorrections(addCorrections(NO_MISTAKES, [GO], 1, 't1'), [AM], 3, 't3')
-  expect(dueMistakes(store, 2).map(c => c.wrong)).toEqual(['go'])
-  expect(dueMistakes(store, 3).map(c => c.wrong)).toEqual([])
-  expect(dueMistakes(store, 4).map(c => c.wrong)).toEqual(['am from', 'go'])
-  expect(dueMistakes(store, 8).map(c => c.wrong)).toEqual(['go'])
-  expect(dueMistakes(store, 9).map(c => c.wrong)).toEqual([])
+  expect(dueMistakes(store, 2, pimsleur).map(c => c.wrong)).toEqual(['go'])
+  expect(dueMistakes(store, 3, pimsleur).map(c => c.wrong)).toEqual([])
+  expect(dueMistakes(store, 4, pimsleur).map(c => c.wrong)).toEqual(['am from', 'go'])
+  expect(dueMistakes(store, 8, pimsleur).map(c => c.wrong)).toEqual(['go'])
+  expect(dueMistakes(store, 9, pimsleur).map(c => c.wrong)).toEqual([])
 })
 
 test('a mistake reviews as its own line, answered with the right words', () => {
@@ -68,11 +69,11 @@ test('a woven card counts as right when the learner used the right form, wrong w
 
 test('the Spinner picks one mistake per turn, due ones first', () => {
   const store = addCorrections(addCorrections(NO_MISTAKES, [GO], 1, 't1'), [AM], 3, 't3')
-  expect(pickForTurn(store, 2, 'turn-1')?.wrong).toBe('go')
-  expect(pickForTurn(store, 2, 'turn-1')).toEqual(pickForTurn(store, 2, 'turn-1'))
+  expect(pickForTurn(store, 2, 'turn-1', pimsleur)?.wrong).toBe('go')
+  expect(pickForTurn(store, 2, 'turn-1', pimsleur)).toEqual(pickForTurn(store, 2, 'turn-1', pimsleur))
   // Nothing due: any of the latest.
-  expect(['go', 'am from']).toContain(pickForTurn(store, 6, 'turn-9')?.wrong)
-  expect(pickForTurn(NO_MISTAKES, 1, 'turn-1')).toBeNull()
+  expect(['go', 'am from']).toContain(pickForTurn(store, 6, 'turn-9', pimsleur)?.wrong)
+  expect(pickForTurn(NO_MISTAKES, 1, 'turn-1', pimsleur)).toBeNull()
 })
 
 test('a card stored under older rules that would not pass as a correction today is reviewed, never woven or in the Spinner', () => {
@@ -81,9 +82,9 @@ test('a card stored under older rules that would not pass as a correction today 
   const marked = { wrong: 'a', right: 'b', note: 'FIX: c', sentence: 'a.' }
   const store = addCorrections(NO_MISTAKES, [forged, quoted, marked, GO], 1, 't')
   expect(store.cards.length).toBe(4)
-  expect(dueMistakes(store, 2).length).toBe(4)
+  expect(dueMistakes(store, 2, pimsleur).length).toBe(4)
   expect(store.cards.filter(isFormCard).map(c => c.wrong)).toEqual(['go'])
-  expect(pickForTurn(addCorrections(NO_MISTAKES, [forged, quoted, marked], 1, 't'), 2, 'turn-1')).toBeNull()
+  expect(pickForTurn(addCorrections(NO_MISTAKES, [forged, quoted, marked], 1, 't'), 2, 'turn-1', pimsleur)).toBeNull()
 })
 
 test('a reading question shown on an empty Enter is a card too: reviewed, never woven or in the Spinner', () => {
@@ -91,6 +92,6 @@ test('a reading question shown on an empty Enter is a card too: reviewed, never 
   const other = { ...question, sentence: 'Where does Ben work?' }
   const store = addCorrections(NO_MISTAKES, [question, other], 1, 't')
   expect(store.cards.length).toBe(2)
-  expect(dueMistakes(store, 2).length).toBe(2)
-  expect(pickForTurn(store, 2, 'turn-1')).toBeNull()
+  expect(dueMistakes(store, 2, pimsleur).length).toBe(2)
+  expect(pickForTurn(store, 2, 'turn-1', pimsleur)).toBeNull()
 })
