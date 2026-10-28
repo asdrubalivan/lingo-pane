@@ -6,6 +6,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "lingo": "bash scripts/lingo.sh",
     "types": "node scripts/ensure-types.mjs --force",
     "pretypecheck": "node scripts/ensure-types.mjs",
     "typecheck": "tsc --noEmit",

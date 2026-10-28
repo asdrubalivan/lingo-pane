@@ -6,7 +6,7 @@ Where an item fails, fix the code or the note that says otherwise in `decisions.
 
 ## Before you start
 
-- Node 22 or newer and tmux. From the repo root: `npm ci`, then `npm exec -- claude --plugin-dir .` (the pinned Claude Code, not a global one).
+- Node 22 or newer and tmux. From the repo root: `npm run lingo` (or `scripts/lingo.sh`) runs `npm ci` if the pinned Claude Code is missing, then `claude --plugin-dir .` in a tmux session `lingo-pane` (the pinned Claude Code, not a global one). Options: `--no-tmux`, `--kill`, `--clean` (fresh HOME, for the clean slate below).
 - Fullscreen layout, a terminal wider than 144 columns. Items marked *narrow* use one under 110 columns.
 - A clean slate for the first run: an empty plugin store (a fresh `HOME`, or remove the `lingo-pane` keys), so `/lingo setup` starts from nothing. For the built-in pack use English as the target language and Spanish as the native one.
 - Anything the tutor says needs a logged-in session: it is a real model call on your plan.
