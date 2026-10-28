@@ -1,6 +1,6 @@
 // Why a model call came back without text, as one short sentence for the
 // learner. Pure: `$.model.complete` never rejects, it resolves with a reason,
-// and the callers in hooks/register.tsx pass that result here.
+// and the callers in hooks/orchestration.ts pass that result here.
 
 import type { ModelCompleteResult } from 'claude-code'
 

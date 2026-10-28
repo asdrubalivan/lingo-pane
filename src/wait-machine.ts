@@ -1,6 +1,6 @@
 // The waiting-state trigger as a pure state machine: what to show while Claude
 // is busy, and when the docked split opens and closes. Timers, `$.ui.open` and
-// the rest live in hooks/register.tsx; this file only decides the next state
+// the rest live in hooks/lifecycle.ts; this file only decides the next state
 // from the current one and an event.
 
 import type { LingoPaneOpener, LingoWaitState } from '../types'

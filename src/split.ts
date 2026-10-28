@@ -1,5 +1,5 @@
 // Sizing and seating of the docked split, and the line that tells a learner
-// studying in it what Claude is doing. Pure: hooks/register.tsx reads the
+// studying in it what Claude is doing. Pure: hooks/screens/pane.tsx reads the
 // viewport off the render events and calls `$.ui.open` with these numbers.
 
 import type { LingoWaitState } from '../types'

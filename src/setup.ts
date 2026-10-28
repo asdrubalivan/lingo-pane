@@ -1,6 +1,6 @@
 // The guided setup as pure logic: the wizard's steps, the strategy catalogue,
 // validation, and reading the saved setup back from `$.store`. The pane that
-// draws it and the `$.store` / `$.state` calls live in hooks/register.tsx.
+// draws it and the `$.store` / `$.state` calls live in hooks/lifecycle.ts and hooks/screens/wizard.tsx.
 
 import { DEFAULT_THEME, isThemeName } from './themes'
 import type {

@@ -1,5 +1,5 @@
 // What the tutor is told, and how its replies are read back. Pure: the
-// `$.model.complete` calls live in hooks/register.tsx. The tutor runs on the
+// `$.model.complete` calls live in hooks/tutor-call.ts and hooks/orchestration.ts. The tutor runs on the
 // model chosen in the setup (Sonnet by default), with low effort and a cap.
 
 import { socratic } from './correction/socratic'

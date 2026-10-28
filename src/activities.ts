@@ -2,7 +2,7 @@
 // rotates, favouring the one done least recently, and never suggests review),
 // the log of finished micro-units kept in `$.store`, and the level hint (the
 // tutor suggests moving up or down; it never changes the level by itself).
-// Pure: hooks/register.tsx reads and writes the store.
+// Pure: hooks/orchestration.ts reads and writes the store.
 
 import { LEVELS } from './setup'
 import type { LingoActivity, LingoActivityLog, LingoLevel, LingoUnitSummary } from '../types'

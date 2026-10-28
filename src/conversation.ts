@@ -1,7 +1,7 @@
 // A micro-unit of conversation or role-play as pure logic: the tutor opens,
 // the learner replies, the tutor answers (pointing at a mistake if there is
 // one), and after a few replies the unit closes with a summary. No `$`, no I/O;
-// inputs are never mutated. hooks/register.tsx makes the model calls.
+// inputs are never mutated. hooks/orchestration.ts makes the model calls.
 
 import { normalizeAnswer } from './lesson'
 import { hasProtocolMarker, sanitizeModelText } from './sanitize'
