@@ -3,13 +3,15 @@ import { DEMO_LESSON_COUNT, DEMO_PACK_TITLE } from '../../src/content/demo-engli
 import { markedParts } from '../../src/conversation'
 import { LABELS } from '../../src/labels'
 import { isFinished } from '../../src/lesson'
-import { currentPaneData, touch } from '../engine'
+import { clearDraft, currentPaneData, keepDraft, touch } from '../engine'
 import { advanceCard, askTutorHint, beginReview, cardLookup, leaveReview, reviewQueueOf, submitAnswer } from '../review-session'
 import type { LessonContext } from './context'
+import { drawEcho, draftOf } from './echo'
 
 // The review: the built-in pack, card by card. An empty Enter shows the answer
 // (a miss); no letter hotkeys, since the field takes every printable key.
-export async function drawReview({ engine, ui, isFocused, setup, theme, dim }: LessonContext) {
+export async function drawReview(pane: LessonContext) {
+  const { engine, ui, isFocused, setup, theme, dim } = pane
   const { Box, Button, Input, Text } = ui
   const session = await engine.practice.read()
   const data = await currentPaneData(engine)
@@ -105,10 +107,23 @@ export async function drawReview({ engine, ui, isFocused, setup, theme, dim }: L
               placeholder={LABELS.reviewPlaceholder}
               submitLabel={LABELS.reviewSubmit}
               autoFocus
-              onInput={() => touch(engine)}
-              onSubmit={value => submitAnswer(engine, lookup, value)}
+              onInput={async value => {
+                await touch(engine)
+                await keepDraft(engine, `answer-${session.index}`, value)
+              }}
+              onSubmit={async value => {
+                await clearDraft(engine)
+                await submitAnswer(engine, lookup, value)
+              }}
             />
           </Box>
+          {drawEcho(
+            pane,
+            `answer-${session.index}`,
+            draftOf(pane.draft, `answer-${session.index}`),
+            { label: LABELS.reviewIn(setup.targetLanguage), submitLabel: LABELS.reviewSubmit, isBoxed: true },
+            { color: theme.you, dim },
+          )}
           {session.hint !== null && (
             <Text color={theme.err} dimColor={dim}>
               {LABELS.reviewNotYet(session.hint)}

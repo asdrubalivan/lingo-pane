@@ -47,7 +47,7 @@ export async function drawPane(rt: Runtime, engine: Engine, e: Parameters<PaneRe
       <Text dimColor>{claudeStateLine(state, state.startedAt === null ? 0 : await engine.clock.now())}</Text>
     </Box>
   )
-  const pane: PaneContext = { engine, rt, ui, isFocused, top }
+  const pane: PaneContext = { engine, rt, ui, isFocused, top, columns: e.props.bodyColumns, draft: await engine.draft.read() }
 
   // A permission ask or a question: the split waits, dimmed and with no field,
   // so a key meant for the dialog never lands in it.

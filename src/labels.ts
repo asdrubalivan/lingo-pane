@@ -62,6 +62,8 @@ export const LABELS = {
   // --- The lesson ----------------------------------------------------------------
   tutor: 'tutor  ',
   you: 'you    ',
+  // The echo under a field: the whole line being typed, once it is longer than the field.
+  typing: 'typing ',
   help: 'help   ',
   tutorThinking: 'the tutor is thinking…',
   // Why the tutor is silent (the platform's reason), then what the learner can do.

@@ -3,16 +3,15 @@ import { isAwaitingLearner, markedParts, summaryText } from '../../src/conversat
 import { LABELS } from '../../src/labels'
 import { listenUrl } from '../../src/listen'
 import type { LingoActivityLog } from '../../types'
-import { touch } from '../engine'
+import { clearDraft, keepDraft, touch } from '../engine'
 import { sendHelp, sendReply } from '../orchestration'
 import type { LessonContext } from './context'
+import { drawEcho, draftOf } from './echo'
 
 // A conversation or role-play unit: the lines so far, the learner's field, and
 // at the end the summary with the next activity one press away.
-export function drawUnit(
-  { engine, ui, isFocused, top, setup, theme, dim, current, chip, nextButton, switchButton }: LessonContext,
-  log: LingoActivityLog,
-) {
+export function drawUnit(pane: LessonContext, log: LingoActivityLog) {
+  const { engine, ui, isFocused, top, setup, theme, dim, current, chip, nextButton, switchButton } = pane
   const { Box, Input, Link, Text } = ui
   const unit = current.unit
 
@@ -98,14 +97,19 @@ export function drawUnit(
               placeholder={LABELS.replyPlaceholder(setup.targetLanguage)}
               submitLabel={LABELS.replySubmit}
               autoFocus
-              onInput={() => touch(engine)}
+              onInput={async value => {
+                await touch(engine)
+                await keepDraft(engine, 'reply', value)
+              }}
               onSubmit={async value => {
                 await touch(engine)
+                await clearDraft(engine)
                 if (value.trim() === '') return sendHelp(engine, setup)
                 return sendReply(engine, setup, value)
               }}
             />
           </Box>
+          {drawEcho(pane, 'reply', draftOf(pane.draft, 'reply'), { submitLabel: LABELS.replySubmit, isBoxed: true }, { color: theme.you, dim })}
           <Box columnGap={2} flexWrap="wrap">
             {lastTutor !== undefined && (
               <Text color={theme.tutor} dimColor={dim}>
