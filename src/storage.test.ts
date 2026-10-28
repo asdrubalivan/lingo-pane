@@ -1,12 +1,14 @@
 import { expect, test } from 'claude-code/testing'
 
-import { ACTIVITY, MISTAKES, SETUP, commitUnit, keepMistakes, load, migrate, mistakeKey, modify, progressCardKey, progressOf } from './storage'
+import { MISTAKES, SETUP, activityEntry, commitUnit, keepMistakes, load, migrate, mistakeKey, modify, progressCardKey, progressOf } from './storage'
 import type { Store } from './storage'
+import { localActivityLog } from './activities'
 import { memoryStore as memory } from './memory-store'
 import { MAX_MISTAKES, mistakeId, parseMistakes, recordMistakeReview } from './mistakes'
 import { advanceLesson, parseProgress, recordAttempt } from './lesson'
 import type { LingoMistakeCard } from '../types'
 
+const ACTIVITY = activityEntry(localActivityLog)
 const PACK = ['c1', 'c2', 'c3', 'c4']
 const PROGRESS = progressOf(PACK)
 // What a store holds once the move to the layout of one key per item is done.
@@ -154,7 +156,7 @@ test('a mistake review writes only that mistake\'s key, and a new mistake its ke
   await modify(store, MISTAKES, m => recordMistakeReview(m, 'b', AT, true))
   expect(writes).toEqual([mistakeKey('b')])
   writes.length = 0
-  await keepMistakes(store, unit('conversation-1'), AT)
+  await keepMistakes(store, unit('conversation-1'), AT, localActivityLog)
   expect(writes).toEqual([mistakeKey(mistakeId('go', 'went')), 'mistakes.index'])
   expect((await load(store, MISTAKES)).cards.map(c => c.id)).toEqual(['a', 'b', mistakeId('go', 'went')])
 })
@@ -164,7 +166,7 @@ test('mistakes that fall off the end lose their keys; a key that cannot be delet
   const seeded: Record<string, unknown> = { ...MOVED, 'mistakes.index': { version: 1, ids: cards.map(c => c.id) } }
   for (const c of cards) seeded[mistakeKey(c.id)] = { version: 1, ...c }
   const { store, entries, failing } = memory(new Map(Object.entries(seeded)))
-  await keepMistakes(store, unit('conversation-1'), AT)
+  await keepMistakes(store, unit('conversation-1'), AT, localActivityLog)
   expect(entries.has(mistakeKey('m0'))).toBe(false)
   expect(entries.has(mistakeKey('m1'))).toBe(true)
   expect((await load(store, MISTAKES)).cards).toHaveLength(MAX_MISTAKES)
@@ -279,7 +281,7 @@ test('moving twice changes nothing, and never undoes what was written after the 
 
   // A session that carried on after the move; a late second move (marker lost) must not overwrite it.
   await modify(store, PROGRESS, p => recordAttempt(advanceLesson(p, 6), 'c1', AT, false))
-  await keepMistakes(store, unit('conversation-1'), AT)
+  await keepMistakes(store, unit('conversation-1'), AT, localActivityLog)
   const carried = structuredClone([...entries])
   entries.delete('storage.layout')
   expect(await migrate(store)).toBe(true)
@@ -406,7 +408,7 @@ test('a store that cannot write the move at all does not throw anywhere and keep
 
 test('a finished unit fixes its number once: the mistakes and the log agree on it', async () => {
   const { store, entries } = memory(new Map(Object.entries({ activity: { version: 1, units: 4, lastDoneAt: {}, done: {}, recent: [] } })))
-  const done = await commitUnit(store, unit('conversation-1'), AT)
+  const done = await commitUnit(store, unit('conversation-1'), AT, localActivityLog)
   expect(done?.isRecorded).toBe(true)
   expect((entries.get('activity') as { units: number }).units).toBe(5)
   expect((await load(store, MISTAKES)).cards.map(c => c.unit)).toEqual([5])
@@ -416,7 +418,7 @@ test('the number is the log\'s even when another session logged a unit meanwhile
   const { store, entries } = memory(new Map(Object.entries({ activity: { version: 1, units: 1, lastDoneAt: {}, done: {}, recent: [] } })))
   // This session read 1; the other one finishes unit 2 before this one commits.
   entries.set('activity', { version: 1, units: 2, lastDoneAt: {}, done: { reading: 1 }, recent: [] })
-  await commitUnit(store, unit('conversation-1'), AT)
+  await commitUnit(store, unit('conversation-1'), AT, localActivityLog)
   expect((entries.get('activity') as { units: number }).units).toBe(3)
   expect((await load(store, MISTAKES)).cards[0]?.unit).toBe(3)
 })
@@ -435,8 +437,8 @@ test('a repeated finish records the unit once: one log entry, one card, one revi
     woven: [woven],
     lines: [{ who: 'you', text: 'I went home.' }],
   })
-  const first = await commitUnit(store, finished, AT)
-  const second = await commitUnit(store, finished, AT)
+  const first = await commitUnit(store, finished, AT, localActivityLog)
+  const second = await commitUnit(store, finished, AT, localActivityLog)
   expect(first?.isRecorded).toBe(true)
   expect(second?.isRecorded).toBe(false)
   const log = entries.get('activity') as { units: number; done: Record<string, number>; recent: unknown[] }
@@ -449,7 +451,7 @@ test('a repeated finish records the unit once: one log entry, one card, one revi
 
 test('a unit with nothing to keep still counts, and leaves the mistakes alone', async () => {
   const { store, entries } = memory()
-  await commitUnit(store, unit('reading-1', { activity: 'reading', corrections: [] }), AT)
+  await commitUnit(store, unit('reading-1', { activity: 'reading', corrections: [] }), AT, localActivityLog)
   expect((entries.get('activity') as { units: number }).units).toBe(1)
   expect([...entries.keys()].some(key => key.startsWith('mistakes'))).toBe(false)
 })
@@ -457,14 +459,14 @@ test('a unit with nothing to keep still counts, and leaves the mistakes alone', 
 test('a store that cannot write the log records nothing, mistakes included', async () => {
   const { store, entries, failing } = memory()
   failing.set.add('activity')
-  expect(await commitUnit(store, unit('conversation-1'), AT)).toBeNull()
+  expect(await commitUnit(store, unit('conversation-1'), AT, localActivityLog)).toBeNull()
   expect([...entries.keys()].some(key => key.startsWith('mistakes'))).toBe(false)
 })
 
 test('a store that cannot write the mistakes still logs the unit, and says the cards were not kept', async () => {
   const { store, entries, failing } = memory()
   failing.set.add('mistakes.index')
-  const done = await commitUnit(store, unit('conversation-1'), AT)
+  const done = await commitUnit(store, unit('conversation-1'), AT, localActivityLog)
   expect(done?.isRecorded).toBe(true)
   expect(done?.areMistakesKept).toBe(false)
   expect((entries.get('activity') as { units: number }).units).toBe(1)
@@ -473,14 +475,14 @@ test('a store that cannot write the mistakes still logs the unit, and says the c
 
 test('a unit says its cards were kept, also when it had none to keep', async () => {
   const { store } = memory()
-  expect((await commitUnit(store, unit('conversation-1'), AT))?.areMistakesKept).toBe(true)
-  expect((await commitUnit(store, unit('reading-1', { activity: 'reading', corrections: [] }), AT))?.areMistakesKept).toBe(true)
+  expect((await commitUnit(store, unit('conversation-1'), AT, localActivityLog))?.areMistakesKept).toBe(true)
+  expect((await commitUnit(store, unit('reading-1', { activity: 'reading', corrections: [] }), AT, localActivityLog))?.areMistakesKept).toBe(true)
 })
 
 test('a unit keeps its cards even when the move of the old layout can never be marked done', async () => {
   const { store, failing } = memory(new Map(Object.entries(structuredClone(oldLayout()))))
   failing.set.add('storage.layout')
-  const done = await commitUnit(store, unit('conversation-1'), AT)
+  const done = await commitUnit(store, unit('conversation-1'), AT, localActivityLog)
   expect(done?.areMistakesKept).toBe(true)
   expect((await load(store, MISTAKES)).cards.map(c => c.wrong)).toContain('go')
 })
@@ -488,7 +490,7 @@ test('a unit keeps its cards even when the move of the old layout can never be m
 test('a unit whose cards cannot be read before they are changed says they were not kept', async () => {
   const { store, failing } = memory(new Map(Object.entries(structuredClone(oldLayout()))))
   failing.get.add('mistakes')
-  const done = await commitUnit(store, unit('conversation-1'), AT)
+  const done = await commitUnit(store, unit('conversation-1'), AT, localActivityLog)
   expect(done?.isRecorded).toBe(true)
   expect(done?.areMistakesKept).toBe(false)
 })
@@ -496,19 +498,19 @@ test('a unit whose cards cannot be read before they are changed says they were n
 test('a unit with no mistakes to keep needs no log: an unreadable one is no failure', async () => {
   const { store, failing } = memory()
   failing.get.add('activity')
-  expect(await keepMistakes(store, unit('conversation-1', { corrections: [] }), AT)).toBe(true)
+  expect(await keepMistakes(store, unit('conversation-1', { corrections: [] }), AT, localActivityLog)).toBe(true)
 })
 
 test('mistakes are not kept when the log that numbers them cannot be read: a card numbered 1 would never fall due', async () => {
   const { store, entries, failing } = memory(new Map(Object.entries({ activity: { version: 1, units: 40, lastDoneAt: {}, done: {}, recent: [] } })))
   failing.get.add('activity')
-  expect(await keepMistakes(store, unit('conversation-1'), AT)).toBe(false)
+  expect(await keepMistakes(store, unit('conversation-1'), AT, localActivityLog)).toBe(false)
   expect([...entries.keys()].some(key => key.startsWith('mistakes'))).toBe(false)
 })
 
 test('mistakes of a unit left half done are numbered by the next unit, without logging it', async () => {
   const { store, entries } = memory(new Map(Object.entries({ activity: { version: 1, units: 2, lastDoneAt: {}, done: {}, recent: [] } })))
-  await keepMistakes(store, unit('conversation-1'), AT)
+  await keepMistakes(store, unit('conversation-1'), AT, localActivityLog)
   expect((await load(store, MISTAKES)).cards[0]?.unit).toBe(3)
   expect((entries.get('activity') as { units: number }).units).toBe(2)
 })

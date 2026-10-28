@@ -1,11 +1,13 @@
 import type { EngineInterface, PluginState } from 'claude-code'
 
-import { ACTIVITY, MISTAKES, SETUP, load, tryLoad } from '../src/storage'
+import { strategiesFor } from '../src/resolver'
+import type { ActiveStrategies } from '../src/resolver'
+import { MISTAKES, SETUP, load, tryLoad } from '../src/storage'
 import type { Store } from '../src/storage'
 import type { WaitEvent } from '../src/wait-machine'
 import { transition } from '../src/wait-machine'
 import type { LingoSetup } from '../types'
-import { NO_PANE_VALUES, PACK_PROGRESS, PANE } from './state'
+import { NO_PANE_VALUES, PANE } from './state'
 import type { PaneValues } from './state'
 
 // The engine, as the rest of the mod sees it.
@@ -64,6 +66,12 @@ export async function currentSetup(engine: Engine): Promise<LingoSetup | null> {
   return cache.isLoaded ? cache.setup : load(engine.store, SETUP)
 }
 
+// The strategies in force: the saved setup's once the mirror is loaded, the defaults before (state only, no store read).
+export async function activeStrategies(engine: Engine): Promise<ActiveStrategies> {
+  const cache = await engine.setupCache.read()
+  return strategiesFor(cache.isLoaded ? cache.setup : null)
+}
+
 // The saved setup, read from the store into the mirror (a missing or unreadable one is pending).
 export async function loadSetupMirror(engine: Engine): Promise<LingoSetup | null> {
   const setup = await load(engine.store, SETUP)
@@ -73,9 +81,9 @@ export async function loadSetupMirror(engine: Engine): Promise<LingoSetup | null
 
 // The three values as the store holds them; null when it failed to give any of
 // them, so a store that is down is never taken for an empty one.
-export async function loadPaneValues(engine: Engine): Promise<PaneValues | null> {
-  const log = await tryLoad(engine.store, ACTIVITY)
-  const progress = await tryLoad(engine.store, PACK_PROGRESS)
+export async function loadPaneValues(engine: Engine, strategies: ActiveStrategies): Promise<PaneValues | null> {
+  const log = await tryLoad(engine.store, strategies.activityEntry)
+  const progress = await tryLoad(engine.store, strategies.progressEntry)
   const mistakes = await tryLoad(engine.store, MISTAKES)
   return log === null || progress === null || mistakes === null ? null : { log, progress, mistakes }
 }
@@ -89,7 +97,7 @@ let latestRefresh = 0
 // fails the mirror stays as it was (not loaded, if it never was).
 export async function refreshPaneData(engine: Engine) {
   const ticket = ++latestRefresh
-  const values = await loadPaneValues(engine)
+  const values = await loadPaneValues(engine, await activeStrategies(engine))
   // A refresh that began earlier and ends later than another has read older values: it is dropped.
   if (values !== null && ticket === latestRefresh) await engine.paneData.update(() => ({ isLoaded: true, ...values }))
 }
@@ -99,9 +107,9 @@ export async function refreshPaneData(engine: Engine) {
 // the engine denies a state write while a pane renders. The next `classic.SessionStart`
 // (it follows /clear, /resume and /branch) reloads the mirror. A store that fails
 // draws as if the values were empty.
-export async function currentPaneData(engine: Engine): Promise<PaneValues> {
+export async function currentPaneData(engine: Engine, strategies: ActiveStrategies): Promise<PaneValues> {
   const mirror = await engine.paneData.read()
-  return mirror.isLoaded ? mirror : ((await loadPaneValues(engine)) ?? NO_PANE_VALUES)
+  return mirror.isLoaded ? mirror : ((await loadPaneValues(engine, strategies)) ?? NO_PANE_VALUES)
 }
 
 export function dispatchWait(engine: Engine, event: WaitEvent) {

@@ -1,6 +1,5 @@
 import type { Hook, MatchedHook } from 'claude-code'
 
-import { nextUnit } from '../src/activities'
 import { badThemeText, parseLingoArgs, unknownSubcommandText } from '../src/command'
 import { MAX_ANSWER_EXCERPT, MAX_PROMPT_EXCERPT, excerpt } from '../src/context'
 import { summaryText } from '../src/conversation'
@@ -8,7 +7,8 @@ import { LABELS } from '../src/labels'
 import { pickForTurn, spinnerLine } from '../src/mistakes'
 import { draftFromConfig, withTheme, wizardTransition } from '../src/setup'
 import { canSeatSplit } from '../src/split'
-import { ACTIVITY, MISTAKES, SETUP, load, modify } from '../src/storage'
+import { strategiesFor } from '../src/resolver'
+import { MISTAKES, SETUP, load, modify } from '../src/storage'
 import { themeByName } from '../src/themes'
 import { CLOSE_DELAY_MS, SHOW_DELAY_MS, closeOnTurnComplete, isKeptOpen, transition } from '../src/wait-machine'
 import { closeSplit, currentSetup, dispatchWait, loadSetupMirror, refreshPaneData } from './engine'
@@ -119,8 +119,9 @@ export async function turnStarted(rt: Runtime, engine: Engine, e: Event<'turn.st
     // The Spinner's card for this turn: one of the learner's own mistakes, due ones first.
     const setup = await currentSetup(engine)
     if (setup !== null) {
-      const log = await load(engine.store, ACTIVITY)
-      const mistake = pickForTurn(await load(engine.store, MISTAKES), nextUnit(log), turnId)
+      const strategies = strategiesFor(setup)
+      const log = await load(engine.store, strategies.activityEntry)
+      const mistake = pickForTurn(await load(engine.store, MISTAKES), strategies.activityLog.nextUnit(log), turnId, strategies.reviewAlgorithm)
       await engine.spinnerCard.update(() => ({ turnId, text: mistake === null ? null : spinnerLine(mistake) }))
     }
 

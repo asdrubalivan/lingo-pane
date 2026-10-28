@@ -5,7 +5,10 @@
 // Pure: hooks/orchestration.ts reads and writes the store.
 
 import { LEVELS } from './setup'
+import type { ActivityLog, LevelHint } from './strategies'
 import type { LingoActivity, LingoActivityLog, LingoLevel, LingoUnitSummary } from '../types'
+
+export type { LevelHint }
 
 export const ACTIVITY_STORE_KEY = 'activity'
 export const ACTIVITY_LOG_VERSION = 1
@@ -95,8 +98,6 @@ export function suggestActivity(log: LingoActivityLog, available: readonly Lingo
   return sorted[0] ?? 'conversation'
 }
 
-export type LevelHint = { direction: 'up' | 'down'; level: LingoLevel }
-
 /**
  * After enough talk: no mistakes at all suggests the next level; most lines
  * corrected suggests the one below. Only ever a suggestion.
@@ -112,4 +113,16 @@ export function levelHint(log: LingoActivityLog, level: LingoLevel): LevelHint |
   if (corrections === 0 && above !== undefined) return { direction: 'up', level: above }
   if (sentences > 0 && corrections / sentences >= 0.6 && below !== undefined) return { direction: 'down', level: below }
   return null
+}
+
+/** The built-in log: one value in `$.store`, the last 20 units kept. */
+export const localActivityLog: ActivityLog = {
+  id: 'local',
+  storeKey: ACTIVITY_STORE_KEY,
+  empty: FRESH_LOG,
+  parse: parseActivityLog,
+  nextUnit,
+  record: recordUnit,
+  suggest: suggestActivity,
+  levelHint,
 }

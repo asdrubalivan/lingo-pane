@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { pimsleur } from './review/pimsleur'
 import { DEMO_CARDS, DEMO_LESSON_COUNT } from './content/demo-english-a1'
 import {
   FRESH_PROGRESS,
@@ -68,10 +69,10 @@ test('lessons advance up to "finished"', () => {
 })
 
 test('lesson 1 has no recall; lesson 8 would recall 7, 5 and 1', () => {
-  const first = buildQueue(DEMO_CARDS, FRESH_PROGRESS, NOW)
+  const first = buildQueue(DEMO_CARDS, FRESH_PROGRESS, NOW, pimsleur)
   expect(first.recall).toEqual([])
   expect(first.fresh.length).toBe(5)
-  const fourth = buildQueue(DEMO_CARDS, { ...FRESH_PROGRESS, currentLesson: 4 }, NOW)
+  const fourth = buildQueue(DEMO_CARDS, { ...FRESH_PROGRESS, currentLesson: 4 }, NOW, pimsleur)
   // n-1 = 3 and n-3 = 1 (n-7 does not exist), then lesson 4's new cards.
   expect(fourth.recall.map(id => DEMO_CARDS.find(c => c.id === id)?.lesson)).toEqual([3, 3, 3, 3, 3, 1, 1, 1, 1, 1])
   expect(fourth.fresh.every(id => DEMO_CARDS.find(c => c.id === id)?.lesson === 4)).toBe(true)
@@ -82,7 +83,7 @@ test('a failed card in the recall block goes first inside its lesson', () => {
   const lesson3 = DEMO_CARDS.filter(c => c.lesson === 3)
   const failed = lesson3[4]!.id
   const progress = recordAttempt({ ...FRESH_PROGRESS, currentLesson: 4 }, failed, 't', false)
-  expect(buildQueue(DEMO_CARDS, progress, NOW).recall[0]).toBe(failed)
+  expect(buildQueue(DEMO_CARDS, progress, NOW, pimsleur).recall[0]).toBe(failed)
 })
 
 test('the session walks asking, correct or revealed, next, done', () => {

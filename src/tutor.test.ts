@@ -1,11 +1,13 @@
 import { expect, test } from 'claude-code/testing'
 
+import { socratic } from './correction/socratic'
 import { excerpt } from './context'
 import { MAX_FIX_LENGTH, MAX_NOTE_LENGTH, MAX_TUTOR_LENGTH, newUnit, withLearnerLine, withTutorTurn } from './conversation'
 import { helpPrompt, openingPrompt, parseHelp, parseTutorTurn, replyPrompt, tutorSystem } from './tutor'
 import type { TutorContext } from './tutor'
 
 const CTX: TutorContext = {
+  correctionStyle: socratic,
   targetLanguage: 'English',
   nativeLanguage: 'Spanish',
   level: 'B1',

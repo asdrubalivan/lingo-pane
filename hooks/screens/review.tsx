@@ -1,5 +1,4 @@
 
-import { DEMO_LESSON_COUNT, DEMO_PACK_TITLE } from '../../src/content/demo-english-a1'
 import { markedParts } from '../../src/conversation'
 import { LABELS } from '../../src/labels'
 import { isFinished } from '../../src/lesson'
@@ -9,38 +8,39 @@ import type { LessonContext } from './context'
 
 // The review: the built-in pack, card by card. An empty Enter shows the answer
 // (a miss); no letter hotkeys, since the field takes every printable key.
-export async function drawReview({ engine, ui, isFocused, setup, theme, dim }: LessonContext) {
+export async function drawReview({ engine, ui, isFocused, setup, strategies, theme, dim }: LessonContext) {
+  const { pack } = strategies
   const { Box, Button, Input, Text } = ui
   const session = await engine.practice.read()
-  const data = await currentPaneData(engine)
+  const data = await currentPaneData(engine, strategies)
   const { progress, mistakes } = data
-  const lookup = cardLookup(mistakes)
+  const lookup = cardLookup(mistakes, strategies)
   const card = session.lesson === null ? undefined : lookup.cardOf(session.queue[session.index])
   const cardMistake = session.lesson === null ? undefined : lookup.mistakeOf(session.queue[session.index])
   const color = { color: theme.fg, dimColor: dim }
 
-  const isDemoPair = setup.targetLanguage.toLowerCase() === 'english' && setup.nativeLanguage.toLowerCase() === 'spanish'
-  const packNote = !isDemoPair && (
+  // The store had no pack made for the pair: the learner is told which one they practise.
+  const packNote = !pack.isForPair && (
     <Text color={theme.dim} dimColor={dim}>
-      {LABELS.reviewPackNote(DEMO_PACK_TITLE)}
+      {LABELS.reviewPackNote(pack.title)}
     </Text>
   )
 
   if (session.lesson === null) {
-    const finished = isFinished(progress, DEMO_LESSON_COUNT)
-    const queue = reviewQueueOf(data, new Date(await engine.clock.now()))
+    const finished = isFinished(progress, pack.lessonCount)
+    const queue = reviewQueueOf(data, new Date(await engine.clock.now()), strategies)
     const isEmpty = queue.recall.length + queue.fresh.length === 0
     return (
       <Box flexDirection="column" marginTop={1}>
         {packNote}
         <Text {...color}>
           {isEmpty
-            ? LABELS.reviewDemoFinished(DEMO_LESSON_COUNT)
+            ? LABELS.reviewDemoFinished(pack.lessonCount)
             : finished
               ? LABELS.reviewMistakesIntro(queue.recall.length)
-              : LABELS.reviewLessonIntro(progress.currentLesson, DEMO_LESSON_COUNT, queue.recall.length, queue.fresh.length)}
+              : LABELS.reviewLessonIntro(progress.currentLesson, pack.lessonCount, queue.recall.length, queue.fresh.length)}
         </Text>
-        {!isEmpty && <Button key="start" label={LABELS.reviewStart} variant="primary" autoFocus onPress={() => beginReview(engine)} />}
+        {!isEmpty && <Button key="start" label={LABELS.reviewStart} variant="primary" autoFocus onPress={() => beginReview(engine, strategies)} />}
       </Box>
     )
   }
@@ -49,9 +49,9 @@ export async function drawReview({ engine, ui, isFocused, setup, theme, dim }: L
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text color={theme.you} bold dimColor={dim}>
-          {session.lesson > DEMO_LESSON_COUNT ? LABELS.reviewDone : LABELS.reviewLessonDone(session.lesson)}
+          {session.lesson > pack.lessonCount ? LABELS.reviewDone : LABELS.reviewLessonDone(session.lesson)}
         </Text>
-        {session.lesson >= DEMO_LESSON_COUNT && <Text {...color}>{LABELS.reviewDemoLast}</Text>}
+        {session.lesson >= pack.lessonCount && <Text {...color}>{LABELS.reviewDemoLast}</Text>}
         <Button
           key="continue"
           label={LABELS.reviewContinue}
@@ -142,7 +142,7 @@ export async function drawReview({ engine, ui, isFocused, setup, theme, dim }: L
           ) : (
             <Text {...color}>{LABELS.reviewAnswer(card?.answer ?? '')}</Text>
           )}
-          <Button key="next" label={LABELS.next} variant="primary" autoFocus onPress={() => advanceCard(engine)} />
+          <Button key="next" label={LABELS.next} variant="primary" autoFocus onPress={() => advanceCard(engine, strategies)} />
         </Box>
       )}
     </Box>
