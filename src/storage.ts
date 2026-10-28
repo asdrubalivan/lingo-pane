@@ -47,7 +47,7 @@ import type {
   LingoUnitSummary,
 } from '../types'
 
-/** What the module needs of `$.store`. A hooks module cannot hand `$` across an import: it wraps the calls (`storeOf` in hooks/register.tsx). */
+/** What the module needs of `$.store`. A hooks module cannot hand `$` across an import: it wraps the calls (`engineOf` in hooks/register.tsx builds `Engine.store`). */
 export type Store = {
   get: (key: string) => Promise<unknown>
   set: (key: string, value: unknown) => Promise<void>

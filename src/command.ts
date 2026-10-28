@@ -1,5 +1,5 @@
 // What `/lingo` was asked to do, parsed from the text after the command name.
-// Pure: hooks/register.tsx turns the result into panes and answers.
+// Pure: hooks/lifecycle.ts turns the result into panes and answers.
 
 import { THEMES, parseThemeName } from './themes'
 import type { LingoThemeName } from '../types'

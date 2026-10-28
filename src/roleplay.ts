@@ -2,7 +2,7 @@
 // Scenarios rotate through the fixed list for the learner's level; when the
 // learner gave interests in the setup, every other role-play is one the tutor
 // makes up from them (in the same call that opens it), marked as made up.
-// Pure: hooks/register.tsx makes the call.
+// Pure: hooks/orchestration.ts makes the call.
 
 import { scenariosFor } from './content/roleplay-scenarios'
 import type { RoleplayScenario } from './content/roleplay-scenarios'

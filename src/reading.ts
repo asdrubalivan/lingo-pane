@@ -1,6 +1,6 @@
 // Reading: a short text the tutor writes at the learner's level, and 2-3
 // questions answered in a word or three. An empty Enter shows the answer and
-// makes a card of the question. Pure: hooks/register.tsx makes the call.
+// makes a card of the question. Pure: hooks/orchestration.ts makes the call.
 
 import { EXCERPT_DELIMITER } from './context'
 import { normalizeAnswer } from './lesson'

@@ -95,7 +95,7 @@ export async function lingoCommand(rt: Runtime, engine: Engine, e: CommandEvent)
   return {}
 }
 
-// --- Busy detection -------------------------------------------------------
+// --- Turns ---------------------------------------------------------------
 
 // `turn.start` is raised for the main loop only (a subagent's run raises none).
 export async function turnStarted(rt: Runtime, engine: Engine, e: Event<'turn.start'>) {

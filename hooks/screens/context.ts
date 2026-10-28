@@ -6,7 +6,7 @@ import type { Runtime } from '../runtime'
 import type { Engine } from '../engine'
 
 // The components every screen of the pane draws with, resolved once for the surface.
-export type Ui = Pick<Elements['terminal'], 'Box' | 'Button' | 'Input' | 'Link' | 'Text'>
+type Ui = Pick<Elements['terminal'], 'Box' | 'Button' | 'Input' | 'Link' | 'Text'>
 
 // What the pane's screens share while one render goes on.
 export type PaneContext = {

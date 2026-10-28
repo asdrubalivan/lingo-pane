@@ -44,7 +44,7 @@ export function reviewQueueOf(data: PaneValues, now: Date): LessonQueue {
 }
 
 // From the store, for a handler that is about to start a session. The pane draws it from the mirror.
-export async function reviewQueue(engine: Engine): Promise<LessonQueue> {
+async function reviewQueue(engine: Engine): Promise<LessonQueue> {
   return reviewQueueOf((await loadPaneValues(engine)) ?? NO_PANE_VALUES, new Date(await engine.clock.now()))
 }
 

@@ -9,7 +9,7 @@ import { ensureLesson } from '../orchestration'
 import { noteViewport, openArgs } from '../runtime'
 import type { Runtime } from '../runtime'
 
-export type BandRender = MatchedHook<'ui.render', { readonly component: 'AbovePrompt' }>
+type BandRender = MatchedHook<'ui.render', { readonly component: 'AbovePrompt' }>
 
 // The band above the prompt: the setup reminder while setup is pending, and
 // "open lesson" while Claude works and the split cannot seat by itself.

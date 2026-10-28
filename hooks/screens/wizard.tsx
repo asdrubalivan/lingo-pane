@@ -18,7 +18,7 @@ import type { WizardEvent } from '../../src/setup'
 import { SETUP, save } from '../../src/storage'
 import { THEMES, themeByName } from '../../src/themes'
 import type { LingoSetup, LingoSetupWizard } from '../../types'
-import { touch } from '../engine'
+import { nowIso, touch } from '../engine'
 import { ensureLesson } from '../orchestration'
 import type { PaneContext } from './context'
 
@@ -44,7 +44,7 @@ export function drawWizard({ engine, rt, ui }: PaneContext, setup: LingoSetup | 
 
   const confirm = async () => {
     const latest = await engine.setupWizard.read()
-    const built = buildSetup(latest.draft ?? defaults, new Date(await engine.clock.now()).toISOString())
+    const built = buildSetup(latest.draft ?? defaults, await nowIso(engine))
     if (built === null) return
     if (!(await save(engine.store, SETUP, built))) return
     await engine.setupCache.update(() => ({ isLoaded: true, setup: built }))

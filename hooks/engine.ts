@@ -17,7 +17,7 @@ import type { PaneValues } from './state'
 // the port, which also lets it run against a fake.
 
 /** One value in `$.state`: the atom's reads and writes, without the atom. */
-export type Cell<T> = {
+type Cell<T> = {
   read: () => Promise<T>
   update: (change: (value: T) => T) => Promise<T>
 }

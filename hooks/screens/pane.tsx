@@ -11,7 +11,7 @@ import type { PaneContext } from './context'
 import { drawLesson } from './lesson'
 import { drawWizard } from './wizard'
 
-export type PaneRender = MatchedHook<'ui.render', { readonly component: 'Pane'; readonly requestId: typeof PANE }>
+type PaneRender = MatchedHook<'ui.render', { readonly component: 'Pane'; readonly requestId: typeof PANE }>
 
 // The split: the wizard while setup is pending (or being redone), else the lesson.
 export async function drawPane(rt: Runtime, engine: Engine, e: Parameters<PaneRender>[1]) {
