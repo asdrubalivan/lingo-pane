@@ -4,6 +4,8 @@
 
 Un mod pour [Claude Code](https://claude.com/claude-code) qui vous enseigne une langue **en direct**, dans votre terminal : un panneau de leçon, des micro-leçons pendant que Claude travaille et un tuteur qui vous corrige comme vous le préférez.
 
+![Démo de 30 s : Claude travaille sur une longue tâche, une leçon s'ouvre à côté, le tuteur signale une erreur sans la corriger et la carte s'affiche dans la ligne du spinner.](docs/images/lingo-pane-demo.gif)
+
 > **Statut : précoce et privé.** Il fonctionne de bout en bout dans le terminal, mais il est encore en essai. Conception et état : [`docs/decisions.md`](docs/decisions.md) (en anglais).
 
 ## Ce qu'il fait

@@ -42,6 +42,15 @@ type Highlight = { left: number; top: number; width: number; height: number };
 const PANE: Highlight = { left: 760, top: 6, width: 514, height: 634 };
 const SPINNER: Highlight = { left: 8, top: 592, width: 700, height: 32 };
 
+// Painted over the take in the background color: the header's model and plan
+// line ("Sonnet 5.5 · Claude Max", Claude Code has no setting to hide it) and
+// the "Get to finished work sooner with Opus" notice a fresh account gets.
+// Nothing else is drawn there, the transcript starts lower.
+const COVERS: Highlight[] = [
+  { left: 120, top: 66, width: 270, height: 22 },
+  { left: 20, top: 100, width: 740, height: 46 },
+];
+
 type Step = {
   from: number;
   to: number;
@@ -198,6 +207,9 @@ export const Demo: React.FC = () => {
           muted
           style={{ width: WIDTH, height: HEIGHT }}
         />
+        {COVERS.map((box) => (
+          <div key={`${box.left},${box.top}`} style={{ position: "absolute", ...box, background: BASE }} />
+        ))}
       </Sequence>
 
       {STEPS.map((step) => (

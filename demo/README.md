@@ -30,15 +30,20 @@ Things that cost time and are in the scripts now:
 
 ## Re-recording the take
 
+Record from a plain clone, not from a Claude worktree: the take shows where it was made unless the header's working directory is hidden (`launch.sh` does that with `CLAUDE_CODE_HIDE_CWD`), and a clone keeps the path clean for anything else that prints it.
+
 ```sh
+git clone <this repo> ~/.cache/lingo-pane-demo/lingo-pane && cd ~/.cache/lingo-pane-demo/lingo-pane && npm ci
 export DEMO_CONFIG_DIR=~/.cache/lingo-pane-demo-claude
-npm exec -- claude --plugin-dir .      # once, from the repo root, to log in and let the mod create its store; then exit
+demo/capture/launch.sh                 # once, from the clone's root, to log in and let the mod create its store (/lingo); then /exit
 node demo/capture/seed-store.mjs
-vhs demo/capture/session.tape          # from the repo root; run it again if a Wait times out (the model's wording varies)
-cp demo/capture/out/session.mp4 demo/public/session.mp4
+vhs demo/capture/session.tape          # from the clone's root, so the take uses its launch.sh; run it again if a Wait times out (the model's wording varies)
+cp demo/capture/out/session.mp4 <this repo>/demo/public/session.mp4   # then render and commit from this repo, not from the clone
 ```
 
 Then move the seconds in `STEPS` (`src/Demo.tsx`) to match the new take: each caption is placed by the second of the take it talks about.
+
+Look at the frames before you publish them (`ffmpeg -ss 14 -i out/lingo-pane-demo.gif -frames:v 1 still.png`). The header also prints the model and the plan name (`Sonnet 5.5 · Claude Max`) and a fresh account gets a model notice under it; Claude Code has no setting for either, so `COVERS` in `src/Demo.tsx` paints over them. If a new take moves them, move the boxes.
 
 ## Rendering
 
@@ -47,5 +52,8 @@ cd demo
 npm ci
 npm run dev                                                    # Remotion Studio
 npx remotion render LingoPaneDemo out/lingo-pane-demo.mp4      # 1280x720, 30 fps
-npx remotion render LingoPaneDemo out/lingo-pane-demo.gif --codec=gif --every-nth-frame=2 --scale=0.75   # 960x540, 15 fps, ~7 MB
+npx remotion render LingoPaneDemo out/lingo-pane-demo.gif --codec=gif --every-nth-frame=2 --scale=0.75   # 960x540, 15 fps, ~6 MB
+cp out/lingo-pane-demo.gif ../docs/images/lingo-pane-demo.gif   # the one the three READMEs show
 ```
+
+Of the renders, commit only that last GIF (`demo/out` is git-ignored). It and `public/session.mp4` are binaries that stay in the history, so re-record once, not once per tweak. The `COVERS` boxes are fixed pixels: check them against the frames of every new take.
