@@ -9,8 +9,7 @@
 import { validCorrection } from './conversation'
 import { normalizeAnswer } from './lesson'
 import { pickIndex } from './microcards'
-import { dueCards } from './review/pimsleur'
-import type { Card } from './strategies'
+import type { Card, ReviewAlgorithm } from './strategies'
 import type { LingoCorrection, LingoLine, LingoMistakeCard, LingoMistakes } from '../types'
 
 export const MISTAKES_STORE_KEY = 'mistakes'
@@ -97,8 +96,8 @@ export function mistakeAsCard(card: LingoMistakeCard): Card {
 }
 
 /** The cards due at `currentUnit` (the unit about to start): from units n-1, n-3, n-7, failed ones first. */
-export function dueMistakes(mistakes: LingoMistakes, currentUnit: number): LingoMistakeCard[] {
-  const due = dueCards(
+export function dueMistakes(mistakes: LingoMistakes, currentUnit: number, algorithm: ReviewAlgorithm): LingoMistakeCard[] {
+  const due = algorithm.dueCards(
     mistakes.cards.map(mistakeAsCard),
     mistakes.cards.map(c => ({ cardId: c.id, reviews: c.reviews })),
     { now: new Date(0), currentLesson: currentUnit },
@@ -137,8 +136,13 @@ export const spinnerLine = (card: { wrong: string; right: string }): string => `
 export const isFormCard = (card: LingoMistakeCard): boolean => card.wrong !== '' && validCorrection(card) !== null
 
 /** The mistake the Spinner shows this turn: a due one if any, else one of the latest; null with none. */
-export function pickForTurn(mistakes: LingoMistakes, currentUnit: number, turnId: string): LingoMistakeCard | null {
-  const due = dueMistakes(mistakes, currentUnit).filter(isFormCard)
+export function pickForTurn(
+  mistakes: LingoMistakes,
+  currentUnit: number,
+  turnId: string,
+  algorithm: ReviewAlgorithm,
+): LingoMistakeCard | null {
+  const due = dueMistakes(mistakes, currentUnit, algorithm).filter(isFormCard)
   const pool = due.length > 0 ? due : mistakes.cards.filter(isFormCard).slice(-20)
   return pool[pickIndex(turnId, pool.length)] ?? null
 }

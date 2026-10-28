@@ -1,6 +1,4 @@
 
-import { DEMO_CARDS, DEMO_LESSON_COUNT } from '../src/content/demo-english-a1'
-import { socratic } from '../src/correction/socratic'
 import { LABELS } from '../src/labels'
 import {
   IDLE_PRACTICE,
@@ -18,55 +16,56 @@ import {
 } from '../src/lesson'
 import type { LessonQueue } from '../src/lesson'
 import { dueMistakes, mistakeAsCard, recordMistakeReview } from '../src/mistakes'
+import type { ActiveStrategies } from '../src/resolver'
 import { MISTAKES, load, modify } from '../src/storage'
-import { nextUnit } from '../src/activities'
 import { parseHelp } from '../src/tutor'
 import type { LingoLesson, LingoPractice, LingoSetup, LingoTutorState } from '../types'
 import { focusKey, loadPaneValues, nowIso, refreshPaneData, touch } from './engine'
 import type { Engine } from './engine'
-import { NO_PANE_VALUES, PACK_PROGRESS } from './state'
+import { NO_PANE_VALUES } from './state'
 import type { PaneValues } from './state'
 import { whyNothing } from './tutor-call'
 
-// The review: the built-in pack's Pimsleur queue and the learner's own mistakes,
-// card by card. These are the steps the review screen's buttons and field take.
+// The review: the mistakes due and the pack's lesson of the language pair (recalled by the
+// review algorithm in force), card by card. These are the steps the review screen's buttons and field take.
 
 // The review's tutor hint (the flashcard practice kept from the first lesson).
 const HINT_TIMEOUT_MS = 20000
 
-// The review: the mistakes due at the next unit first, then the built-in pack's Pimsleur lesson.
-export function reviewQueueOf(data: PaneValues, now: Date): LessonQueue {
-  const due = dueMistakes(data.mistakes, nextUnit(data.log)).map(c => c.id)
-  const pack = isFinished(data.progress, DEMO_LESSON_COUNT)
+// The review: the mistakes due at the next unit first, then the pack's lesson.
+export function reviewQueueOf(data: PaneValues, now: Date, strategies: ActiveStrategies): LessonQueue {
+  const { activityLog, pack, reviewAlgorithm } = strategies
+  const due = dueMistakes(data.mistakes, activityLog.nextUnit(data.log), reviewAlgorithm).map(c => c.id)
+  const lessons = isFinished(data.progress, pack.lessonCount)
     ? { recall: [], fresh: [] }
-    : buildQueue(DEMO_CARDS, data.progress, now)
-  return { recall: [...due, ...pack.recall], fresh: pack.fresh }
+    : buildQueue(pack.cards, data.progress, now, reviewAlgorithm)
+  return { recall: [...due, ...lessons.recall], fresh: lessons.fresh }
 }
 
 // From the store, for a handler that is about to start a session. The pane draws it from the mirror.
-async function reviewQueue(engine: Engine): Promise<LessonQueue> {
-  return reviewQueueOf((await loadPaneValues(engine)) ?? NO_PANE_VALUES, new Date(await engine.clock.now()))
+async function reviewQueue(engine: Engine, strategies: ActiveStrategies): Promise<LessonQueue> {
+  return reviewQueueOf((await loadPaneValues(engine, strategies)) ?? NO_PANE_VALUES, new Date(await engine.clock.now()), strategies)
 }
 
-// The cards of a review as the pane drew them: the learner's mistakes, else the built-in pack.
+// The cards of a review as the pane drew them: the learner's mistakes, else the pack's.
 // A snapshot of the mirror the screen read, so a press acts on what the learner saw.
-export function cardLookup(mistakes: PaneValues['mistakes']) {
+export function cardLookup(mistakes: PaneValues['mistakes'], strategies: ActiveStrategies) {
   const mistakeOf = (id: string | undefined) => mistakes.cards.find(c => c.id === id)
   const cardOf = (id: string | undefined) => {
     const mistake = mistakeOf(id)
-    return mistake === undefined ? DEMO_CARDS.find(c => c.id === id) : mistakeAsCard(mistake)
+    return mistake === undefined ? strategies.pack.cards.find(c => c.id === id) : mistakeAsCard(mistake)
   }
-  return { mistakeOf, cardOf }
+  return { mistakeOf, cardOf, strategies }
 }
 export type CardLookup = ReturnType<typeof cardLookup>
 
-// The review: the built-in pack's Pimsleur queue, started at once (zero clicks).
-export async function startReview(engine: Engine) {
+// The review, started at once (zero clicks).
+export async function startReview(engine: Engine, strategies: ActiveStrategies) {
   await engine.lesson.update((l): LingoLesson => ({ ...l, activity: 'review', isMenuOpen: false }))
   if (isReviewRunning(await engine.practice.read())) return
-  const queue = await reviewQueue(engine)
+  const queue = await reviewQueue(engine, strategies)
   if (queue.recall.length + queue.fresh.length === 0) return
-  const latest = await load(engine.store, PACK_PROGRESS)
+  const latest = await load(engine.store, strategies.progressEntry)
   await engine.practice.update(() => startPractice(queue, latest.currentLesson))
   await focusKey(engine, 'answer-0')
 }
@@ -77,10 +76,10 @@ export function isReviewRunning(session: LingoPractice): boolean {
 }
 
 // The review's start button.
-export async function beginReview(engine: Engine) {
+export async function beginReview(engine: Engine, strategies: ActiveStrategies) {
   await touch(engine)
-  const latest = await load(engine.store, PACK_PROGRESS)
-  const queue = await reviewQueue(engine)
+  const latest = await load(engine.store, strategies.progressEntry)
+  const queue = await reviewQueue(engine, strategies)
   await engine.practice.update(() => startPractice(queue, latest.currentLesson))
   await focusKey(engine, 'answer-0')
 }
@@ -91,7 +90,7 @@ async function record(engine: Engine, lookup: CardLookup, cardId: string, isCorr
   const saved =
     lookup.mistakeOf(cardId) !== undefined
       ? await modify(engine.store, MISTAKES, latest => recordMistakeReview(latest, cardId, at, isCorrect))
-      : await modify(engine.store, PACK_PROGRESS, latest => recordAttempt(latest, cardId, at, isCorrect))
+      : await modify(engine.store, lookup.strategies.progressEntry, latest => recordAttempt(latest, cardId, at, isCorrect))
   if (saved === null) engine.ui.toast(`${LABELS.modName}: ${LABELS.progressNotSaved}`)
   await refreshPaneData(engine)
 }
@@ -120,15 +119,15 @@ export async function submitAnswer(engine: Engine, lookup: CardLookup, value: st
 }
 
 // The next card, or the end of the lesson being studied.
-export async function advanceCard(engine: Engine) {
+export async function advanceCard(engine: Engine, strategies: ActiveStrategies) {
   await touch(engine)
   const latest = await engine.practice.read()
   if (latest.status !== 'correct' && latest.status !== 'revealed') return
   const advanced = nextCard(latest)
   if (advanced.status === 'done') {
     // Finishing the lesson being studied moves the learner on, once.
-    const moved = await modify(engine.store, PACK_PROGRESS, stored =>
-      latest.lesson === stored.currentLesson ? advanceLesson(stored, DEMO_LESSON_COUNT) : stored,
+    const moved = await modify(engine.store, strategies.progressEntry, stored =>
+      latest.lesson === stored.currentLesson ? advanceLesson(stored, strategies.pack.lessonCount) : stored,
     )
     if (moved === null) engine.ui.toast(`${LABELS.modName}: ${LABELS.progressNotSaved}`)
     await refreshPaneData(engine)
@@ -148,7 +147,7 @@ export async function askTutorHint(engine: Engine, setup: LingoSetup, lookup: Ca
 
   const reply = await engine.model.complete({
     model: 'haiku',
-    system: socratic.instruction({ targetLanguage: setup.targetLanguage, nativeLanguage: setup.nativeLanguage }),
+    system: lookup.strategies.correctionStyle.instruction({ targetLanguage: setup.targetLanguage, nativeLanguage: setup.nativeLanguage }),
     prompt: tutorPrompt(current, latest.lastAnswer ?? '(nothing yet)', setup.targetLanguage, setup.nativeLanguage),
     effort: 'low',
     maxTokens: 200,

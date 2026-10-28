@@ -1,4 +1,3 @@
-import { levelHint } from '../../src/activities'
 import { isAwaitingLearner, markedParts, summaryText } from '../../src/conversation'
 import { LABELS } from '../../src/labels'
 import { listenUrl } from '../../src/listen'
@@ -11,7 +10,7 @@ import { drawTypedEcho } from './echo'
 // A conversation or role-play unit: the lines so far, the learner's field, and
 // at the end the summary with the next activity one press away.
 export function drawUnit(pane: LessonContext, log: LingoActivityLog) {
-  const { engine, ui, isFocused, top, setup, theme, dim, current, chip, nextButton, switchButton } = pane
+  const { engine, ui, isFocused, top, setup, strategies, theme, dim, current, chip, nextButton, switchButton } = pane
   const { Box, Input, Link, Text } = ui
   const unit = current.unit
 
@@ -32,7 +31,7 @@ export function drawUnit(pane: LessonContext, log: LingoActivityLog) {
   // The draft belongs to this unit's reply: the field keeps its key from one unit to the next.
   const field = `reply:${unit.id}`
   const lastTutor = [...unit.lines].reverse().find(l => l.who === 'tutor')
-  const found = unit.summary === null ? null : levelHint(log, setup.level)
+  const found = unit.summary === null ? null : strategies.activityLog.levelHint(log, setup.level)
   const hint = found === null ? null : LABELS.levelHint(found.direction, found.level)
 
   // Where a role-play happens and who plays whom, under the chip.

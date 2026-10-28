@@ -1,5 +1,4 @@
 
-import { nextUnit, suggestActivity } from '../src/activities'
 import {
   UNIT_REPLIES,
   askedForHelp,
@@ -13,13 +12,14 @@ import {
 import { LABELS } from '../src/labels'
 import { MAX_WOVEN, dueMistakes, isFormCard } from '../src/mistakes'
 import { READING_MAX_TOKENS, answerReading, parseReading, readingPrompt, readingSystem, showReadingAnswer } from '../src/reading'
+import { strategiesFor } from '../src/resolver'
 import { generatedOpeningPrompt, parseScenario, pickScenario } from '../src/roleplay'
-import { ACTIVITY, MISTAKES, commitUnit, keepMistakes, load } from '../src/storage'
+import { MISTAKES, commitUnit, keepMistakes, load } from '../src/storage'
 import type { FinishedUnit, UnitMistakes } from '../src/storage'
 import { helpPrompt, openingPrompt, parseHelp, parseTutorTurn, replyPrompt, tutorSystem } from '../src/tutor'
 import { isClaudeWorking, isKeptOpen } from '../src/wait-machine'
 import type { LingoActivity, LingoLesson, LingoReading, LingoSetup, LingoUnit, LingoUnitSummary } from '../types'
-import { closeSplit, focusKey, nowIso, refreshPaneData } from './engine'
+import { activeStrategies, closeSplit, focusKey, nowIso, refreshPaneData } from './engine'
 import type { Engine } from './engine'
 import { isReviewRunning, startReview } from './review-session'
 import { AVAILABLE_ACTIVITIES } from './state'
@@ -38,8 +38,9 @@ async function updateUnit(engine: Engine, id: string, change: (unit: LingoUnit) 
 // their interests in the same call.
 async function openTalkUnit(engine: Engine, setup: LingoSetup, activity: LingoUnit['activity']) {
   // The tutor weaves in a couple of the mistakes due at this unit.
-  const log = await load(engine.store, ACTIVITY)
-  const due = dueMistakes(await load(engine.store, MISTAKES), nextUnit(log)).filter(isFormCard)
+  const strategies = strategiesFor(setup)
+  const log = await load(engine.store, strategies.activityEntry)
+  const due = dueMistakes(await load(engine.store, MISTAKES), strategies.activityLog.nextUnit(log), strategies.reviewAlgorithm).filter(isFormCard)
   const woven = due.slice(0, MAX_WOVEN).map(c => ({ id: c.id, wrong: c.wrong, right: c.right }))
   const pick = activity === 'roleplay' ? pickScenario(setup.level, setup.interests, log.done.roleplay ?? 0) : null
   const scenario = pick?.kind === 'fixed' ? pick.scenario : null
@@ -104,7 +105,7 @@ export async function answerQuestion(engine: Engine, value: string) {
 }
 
 export async function startActivity(engine: Engine, setup: LingoSetup, activity: LingoActivity) {
-  if (activity === 'review') return startReview(engine)
+  if (activity === 'review') return startReview(engine, strategiesFor(setup))
   if (activity === 'reading') return openReading(engine, setup)
   // A talk unit left half done for another one closes here: its mistakes are kept.
   const left = (await engine.lesson.read()).unit
@@ -130,8 +131,9 @@ export async function ensureLesson(engine: Engine, setup: LingoSetup) {
     }
     return
   }
-  const log = await load(engine.store, ACTIVITY)
-  return startActivity(engine, setup, suggestActivity(log, AVAILABLE_ACTIVITIES))
+  const strategies = strategiesFor(setup)
+  const log = await load(engine.store, strategies.activityEntry)
+  return startActivity(engine, setup, strategies.activityLog.suggest(log, AVAILABLE_ACTIVITIES))
 }
 
 // The summary of the activity on screen when its unit is over; null while one runs.
@@ -145,7 +147,8 @@ export function finishedSummary(current: LingoLesson): { activity: LingoActivity
 
 // The mistakes of a unit that is not logged, kept as cards; the learner is told when the store would not take them.
 async function keepCards(engine: Engine, unit: UnitMistakes) {
-  if (!(await keepMistakes(engine.store, unit, await nowIso(engine)))) engine.ui.toast(`${LABELS.modName}: ${LABELS.cardsNotSaved}`)
+  const { activityLog } = await activeStrategies(engine)
+  if (!(await keepMistakes(engine.store, unit, await nowIso(engine), activityLog))) engine.ui.toast(`${LABELS.modName}: ${LABELS.cardsNotSaved}`)
 }
 
 // A finished unit of any activity: recorded once (log and mistakes together); with
@@ -153,7 +156,8 @@ async function keepCards(engine: Engine, unit: UnitMistakes) {
 // What the store would not take is marked on the unit's summary, so the toast, the pane and the
 // toast when the turn ends all say so instead of claiming it was saved.
 async function finishActivity(engine: Engine, unit: FinishedUnit) {
-  const committed = await commitUnit(engine.store, unit, await nowIso(engine))
+  const { activityLog } = await activeStrategies(engine)
+  const committed = await commitUnit(engine.store, unit, await nowIso(engine), activityLog)
   await refreshPaneData(engine)
   // Already recorded (a repeated event): the learner has been told.
   if (committed !== null && !committed.isRecorded) return

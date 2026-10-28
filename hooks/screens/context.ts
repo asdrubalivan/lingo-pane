@@ -1,5 +1,6 @@
 import type { Elements } from 'claude-code'
 
+import type { ActiveStrategies } from '../../src/resolver'
 import type { ThemeColors } from '../../src/themes'
 import type { LingoDraft, LingoLesson, LingoSetup } from '../../types'
 import type { Runtime } from '../runtime'
@@ -26,6 +27,8 @@ export type PaneContext = {
 // The lesson screens: a learner who is set up, the theme's colors, what is on screen.
 export type LessonContext = PaneContext & {
   setup: LingoSetup
+  // The implementations in force for this learner, and the pack of their language pair.
+  strategies: ActiveStrategies
   theme: ThemeColors
   // The keys are elsewhere: the lesson dims.
   dim: boolean

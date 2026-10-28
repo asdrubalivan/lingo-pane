@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { socratic } from './correction/socratic'
 import {
   MAX_READING_ANSWER_LENGTH,
   MAX_READING_QUESTION_LENGTH,
@@ -23,6 +24,7 @@ const REPLY = [
 ].join('\n')
 
 const CTX: TutorContext = {
+  correctionStyle: socratic,
   targetLanguage: 'English', nativeLanguage: 'Spanish', level: 'A2', interests: ['chess'],
   activity: 'conversation', scenario: null, weave: [], workContext: null,
 }

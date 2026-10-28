@@ -22,7 +22,6 @@
 // the read fail, as any failed read does, rather than count as absent: a change
 // would otherwise write over what could not be read.
 
-import { nextUnit, parseActivityLog, recordUnit, ACTIVITY_STORE_KEY } from './activities'
 import { FRESH_PROGRESS, PROGRESS_STORE_KEY, PROGRESS_VERSION, parseCardProgress, parseLessonNumber, parseProgress } from './lesson'
 import {
   MAX_MISTAKES,
@@ -36,6 +35,7 @@ import {
   wovenOutcome,
 } from './mistakes'
 import { SETUP_STORE_KEY, parseSetup } from './setup'
+import type { ActivityLog } from './strategies'
 import type {
   LingoActivity,
   LingoActivityLog,
@@ -79,7 +79,8 @@ function whole<T>(key: string, parse: (raw: unknown) => T): Whole<T> {
 }
 
 export const SETUP = whole(SETUP_STORE_KEY, parseSetup)
-export const ACTIVITY: Whole<LingoActivityLog> = whole(ACTIVITY_STORE_KEY, parseActivityLog)
+/** The activity log's value in the store, as the log in force reads it. */
+export const activityEntry = (log: ActivityLog): Whole<LingoActivityLog> => whole(log.storeKey, log.parse)
 
 // --- Layout: one key per item -----------------------------------------------
 
@@ -156,7 +157,7 @@ export async function migrate(store: Store): Promise<boolean> {
 }
 
 /**
- * The progress of the cards whose ids are given (the built-in pack's): the
+ * The progress of the cards whose ids are given (the pack of the learner's pair): the
  * lesson and each card under its own key. A change writes the cards whose
  * attempts changed and the lesson if it moved.
  */
@@ -323,9 +324,10 @@ export async function commitUnit(
   store: Store,
   unit: FinishedUnit,
   at: string,
+  activityLog: ActivityLog,
 ): Promise<{ isRecorded: boolean; areMistakesKept: boolean; log: LingoActivityLog } | null> {
-  const logged = await modify(store, ACTIVITY, log =>
-    log.recent.some(r => r.id === unit.id) ? log : recordUnit(log, unit.activity, unit.summary, at, unit.id),
+  const logged = await modify(store, activityEntry(activityLog), log =>
+    log.recent.some(r => r.id === unit.id) ? log : activityLog.record(log, unit.activity, unit.summary, at, unit.id),
   )
   if (logged === null) return null
   const isRecorded = logged.after !== logged.before
@@ -338,9 +340,9 @@ export async function commitUnit(
  * a reading's answer that was shown), numbered by the unit that comes next.
  * False when the store failed and they were not kept.
  */
-export async function keepMistakes(store: Store, unit: UnitMistakes, at: string): Promise<boolean> {
+export async function keepMistakes(store: Store, unit: UnitMistakes, at: string, activityLog: ActivityLog): Promise<boolean> {
   if (unit.corrections.length === 0 && unit.woven.length === 0) return true
   // A log that cannot be read would number the cards 1, which come due long before their unit.
-  const log = await tryLoad(store, ACTIVITY)
-  return log !== null && (await saveMistakes(store, unit, nextUnit(log), at))
+  const log = await tryLoad(store, activityEntry(activityLog))
+  return log !== null && (await saveMistakes(store, unit, activityLog.nextUnit(log), at))
 }

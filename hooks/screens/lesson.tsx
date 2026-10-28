@@ -1,6 +1,7 @@
 
-import { ACTIVITIES, activityLabel, suggestActivity } from '../../src/activities'
+import { ACTIVITIES, activityLabel } from '../../src/activities'
 import { LABELS } from '../../src/labels'
+import { strategiesFor } from '../../src/resolver'
 import { themeByName } from '../../src/themes'
 import type { LingoActivity, LingoLesson, LingoSetup } from '../../types'
 import { clearDraft, currentPaneData, focusKey, touch } from '../engine'
@@ -97,8 +98,9 @@ export async function drawLesson(pane: PaneContext, setup: LingoSetup) {
     )
   }
 
-  const { log } = await currentPaneData(engine)
-  const suggested = suggestActivity(log, AVAILABLE_ACTIVITIES)
+  const strategies = strategiesFor(setup)
+  const { log } = await currentPaneData(engine, strategies)
+  const suggested = strategies.activityLog.suggest(log, AVAILABLE_ACTIVITIES)
   const nextButton = (
     <Button
       key="next-unit"
@@ -112,7 +114,7 @@ export async function drawLesson(pane: PaneContext, setup: LingoSetup) {
     />
   )
 
-  const screen: LessonContext = { ...pane, setup, theme, dim, current, chip, nextButton, switchButton }
+  const screen: LessonContext = { ...pane, setup, strategies, theme, dim, current, chip, nextButton, switchButton }
 
   if (current.activity === 'reading') return drawReading(screen)
 
