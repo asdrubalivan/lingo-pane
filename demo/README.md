@@ -37,8 +37,8 @@ git clone <this repo> ~/.cache/lingo-pane-demo/lingo-pane && cd ~/.cache/lingo-p
 export DEMO_CONFIG_DIR=~/.cache/lingo-pane-demo-claude
 demo/capture/launch.sh                 # once, from the clone's root, to log in and let the mod create its store (/lingo); then /exit
 node demo/capture/seed-store.mjs
-vhs demo/capture/session.tape          # from the repo root; run it again if a Wait times out (the model's wording varies)
-cp demo/capture/out/session.mp4 demo/public/session.mp4
+vhs demo/capture/session.tape          # from the clone's root, so the take uses its launch.sh; run it again if a Wait times out (the model's wording varies)
+cp demo/capture/out/session.mp4 <this repo>/demo/public/session.mp4   # then render and commit from this repo, not from the clone
 ```
 
 Then move the seconds in `STEPS` (`src/Demo.tsx`) to match the new take: each caption is placed by the second of the take it talks about.
@@ -56,4 +56,4 @@ npx remotion render LingoPaneDemo out/lingo-pane-demo.gif --codec=gif --every-nt
 cp out/lingo-pane-demo.gif ../docs/images/lingo-pane-demo.gif   # the one the three READMEs show
 ```
 
-Commit only that last file: it is a binary, so every committed take stays in the history.
+Of the renders, commit only that last GIF (`demo/out` is git-ignored). It and `public/session.mp4` are binaries that stay in the history, so re-record once, not once per tweak. The `COVERS` boxes are fixed pixels: check them against the frames of every new take.
