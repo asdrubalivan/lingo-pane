@@ -157,7 +157,7 @@ export async function migrate(store: Store): Promise<boolean> {
 }
 
 /**
- * The progress of the cards whose ids are given (the built-in pack's): the
+ * The progress of the cards whose ids are given (the pack of the learner's pair): the
  * lesson and each card under its own key. A change writes the cards whose
  * attempts changed and the lesson if it moved.
  */

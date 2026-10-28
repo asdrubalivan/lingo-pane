@@ -11,7 +11,7 @@ Un mod pour [Claude Code](https://claude.com/claude-code) qui vous enseigne une 
 - Pendant que Claude travaille, un **split** s'ouvre à côté de la transcription (terminaux en plein écran à partir de 110 colonnes ; 40 % de la largeur par défaut) avec une courte leçon : **conversation**, **jeu de rôle** ou **lecture** avec le tuteur, en micro-unités de trois réponses. Sur un terminal plus étroit, un bouton `1: open lesson` au-dessus du prompt l'ouvre.
 - Le tuteur vous corrige de façon socratique (il montre l'erreur et vous laisse réessayer) ; **Entrée sur une ligne vide** demande de l'aide. Vos erreurs deviennent des cartes, révisées à la manière de Pimsleur et affichées dans la ligne du spinner.
 - `/lingo` l'ouvre ou le ferme à la main, `/lingo setup` lance l'assistant (langues, niveau, centres d'intérêt, largeur du split, modèle du tuteur, thème) et `/lingo theme <nom>` change les couleurs.
-- Tout ce qui varie d'un apprenant à l'autre est une **stratégie** : où vit votre contenu (un pack par paire de langues), comment les révisions sont planifiées, comment vous êtes corrigé et comment votre activité est consignée. Chacune a aujourd'hui une implémentation intégrée ; `/lingo setup` montre les autres comme à venir, et une nouvelle s'enregistre en un seul endroit (`src/resolver.ts`).
+- Tout ce qui varie d'un apprenant à l'autre est une **stratégie** : où vit votre contenu (un pack par paire de langues), comment les révisions sont planifiées, comment vous êtes corrigé et comment votre activité est consignée. Chacune a aujourd'hui une implémentation intégrée ; `/lingo setup` montre les autres comme à venir, et une nouvelle s'enregistre dans `src/resolver.ts` et se déclare intégrée dans `src/setup.ts`.
 
 ## Prérequis
 

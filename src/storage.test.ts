@@ -6,6 +6,7 @@ import { localActivityLog } from './activities'
 import { memoryStore as memory } from './memory-store'
 import { MAX_MISTAKES, mistakeId, parseMistakes, recordMistakeReview } from './mistakes'
 import { advanceLesson, parseProgress, recordAttempt } from './lesson'
+import type { ActivityLog } from './strategies'
 import type { LingoMistakeCard } from '../types'
 
 const ACTIVITY = activityEntry(localActivityLog)
@@ -513,4 +514,22 @@ test('mistakes of a unit left half done are numbered by the next unit, without l
   await keepMistakes(store, unit('conversation-1'), AT, localActivityLog)
   expect((await load(store, MISTAKES)).cards[0]?.unit).toBe(3)
   expect((entries.get('activity') as { units: number }).units).toBe(2)
+})
+
+test('a log of another kind is the one the unit is recorded in and numbered by', async () => {
+  const { store, entries } = memory()
+  // Counts in tens, under a key of its own: nothing here is the built-in log's.
+  const tens: ActivityLog = {
+    ...localActivityLog,
+    id: 'tens',
+    storeKey: 'tens-log',
+    record: (log, activity, summary, at, id) => ({ ...localActivityLog.record(log, activity, summary, at, id), units: log.units + 10 }),
+    nextUnit: log => log.units + 10,
+  }
+  const done = await commitUnit(store, unit('conversation-1'), AT, tens)
+  expect(done?.isRecorded).toBe(true)
+  expect((entries.get('tens-log') as { units: number }).units).toBe(10)
+  expect(entries.has('activity')).toBe(false)
+  // The mistakes are numbered by the unit this log gave.
+  expect((await load(store, MISTAKES)).cards.map(c => c.unit)).toEqual([10])
 })

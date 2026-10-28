@@ -6,7 +6,7 @@ import { currentPaneData, touch } from '../engine'
 import { advanceCard, askTutorHint, beginReview, cardLookup, leaveReview, reviewQueueOf, submitAnswer } from '../review-session'
 import type { LessonContext } from './context'
 
-// The review: the built-in pack, card by card. An empty Enter shows the answer
+// The review: the pack of the learner's language pair, card by card. An empty Enter shows the answer
 // (a miss); no letter hotkeys, since the field takes every printable key.
 export async function drawReview({ engine, ui, isFocused, setup, strategies, theme, dim }: LessonContext) {
   const { pack } = strategies

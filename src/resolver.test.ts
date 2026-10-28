@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { DEMO_PACK_ID } from './content/demo-english-a1'
-import { resolveStrategies, strategiesFor } from './resolver'
+import { REGISTRY, resolveStrategies, strategiesFor } from './resolver'
 import { DEFAULT_STRATEGIES, STRATEGY_AXES, buildSetup, draftFromConfig } from './setup'
 import type { LingoSetup, LingoStrategyChoices } from '../types'
 
@@ -25,13 +25,25 @@ test('a choice nobody built resolves to nothing', () => {
   }
 })
 
-test('exactly the options the setup offers as built resolve; the rest are refused there and here', () => {
+test('an option the setup offers as built resolves, and one it does not offer as built does not', () => {
   for (const info of STRATEGY_AXES) {
     for (const option of info.options) {
       const resolved = resolveStrategies({ ...DEFAULT_STRATEGIES, [info.axis]: option.id }) !== null
-      expect({ axis: info.axis, id: option.id, resolved }).toEqual({ axis: info.axis, id: option.id, resolved: option.isImplemented })
+      expect(resolved, `${info.axis}: ${option.id}`).toBe(option.isImplemented)
     }
   }
+})
+
+test('everything registered is offered as built in the setup, so setup validation cannot refuse a working choice', () => {
+  for (const info of STRATEGY_AXES) {
+    const built = info.options.filter(o => o.isImplemented).map(o => o.id)
+    expect(Object.keys(REGISTRY[info.axis]).sort(), info.axis).toEqual(built.sort())
+  }
+})
+
+test('a saved setup that names something unregistered still gets working strategies: the defaults', () => {
+  const forged: LingoSetup = { ...setupFor('English', 'Spanish'), strategies: { ...DEFAULT_STRATEGIES, reviewAlgorithm: 'fsrs' } }
+  expect(strategiesFor(forged).reviewAlgorithm.id).toBe('pimsleur')
 })
 
 test('the pack follows the learner\'s language pair, not a pair written in the pane', () => {

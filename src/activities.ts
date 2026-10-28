@@ -8,7 +8,6 @@ import { LEVELS } from './setup'
 import type { ActivityLog, LevelHint } from './strategies'
 import type { LingoActivity, LingoActivityLog, LingoLevel, LingoUnitSummary } from '../types'
 
-export type { LevelHint }
 
 export const ACTIVITY_STORE_KEY = 'activity'
 export const ACTIVITY_LOG_VERSION = 1

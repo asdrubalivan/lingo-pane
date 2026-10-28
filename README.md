@@ -11,7 +11,7 @@ A [Claude Code](https://claude.com/claude-code) mod that teaches you a language 
 - While Claude works, a **split** opens beside the transcript (fullscreen terminals from 110 columns; 40 % of the width by default) with a short lesson: a **conversation**, a **role-play** or a **reading** with the tutor, in micro-units of three replies. On narrower terminals a `1: open lesson` button above the prompt opens it instead.
 - The tutor corrects you the socratic way (it points at the mistake and lets you try again); **Enter on an empty line** asks for help. Your mistakes become flashcards, reviewed Pimsleur-style and shown in the spinner line.
 - `/lingo` opens or closes it by hand, `/lingo setup` runs the guided setup (languages, level, interests, split width, tutor model, theme), `/lingo theme <name>` switches colors.
-- Everything that varies between learners is a **strategy**: where your content lives (one pack per language pair), how reviews are scheduled, how you are corrected and how your activity is logged. Each has one built-in implementation today; `/lingo setup` lists the others as coming later, and a new one is registered in one place (`src/resolver.ts`).
+- Everything that varies between learners is a **strategy**: where your content lives (one pack per language pair), how reviews are scheduled, how you are corrected and how your activity is logged. Each has one built-in implementation today; `/lingo setup` lists the others as coming later, and a new one is registered in `src/resolver.ts` and listed as built in `src/setup.ts`.
 
 ## Requirements
 

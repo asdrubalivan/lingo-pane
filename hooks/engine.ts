@@ -66,10 +66,10 @@ export async function currentSetup(engine: Engine): Promise<LingoSetup | null> {
   return cache.isLoaded ? cache.setup : load(engine.store, SETUP)
 }
 
-// The strategies in force: the saved setup's once the mirror is loaded, the defaults before (state only, no store read).
+// The strategies in force for the saved setup (the mirror once loaded, the store before), for a
+// handler that has no setup in hand.
 export async function activeStrategies(engine: Engine): Promise<ActiveStrategies> {
-  const cache = await engine.setupCache.read()
-  return strategiesFor(cache.isLoaded ? cache.setup : null)
+  return strategiesFor(await currentSetup(engine))
 }
 
 // The saved setup, read from the store into the mirror (a missing or unreadable one is pending).

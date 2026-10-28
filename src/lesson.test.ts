@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { pimsleur } from './review/pimsleur'
 import { DEMO_CARDS, DEMO_LESSON_COUNT } from './content/demo-english-a1'
+import { pimsleur } from './review/pimsleur'
+import type { ReviewAlgorithm } from './strategies'
 import {
   FRESH_PROGRESS,
   advanceLesson,
@@ -21,6 +22,16 @@ import {
 } from './lesson'
 
 const NOW = new Date('2026-10-02T12:00:00Z')
+
+test('the cards recalled are the ones the review algorithm in force says, not a fixed rule', () => {
+  const lastTwo: ReviewAlgorithm = {
+    id: 'last-two',
+    dueCards: (cards, _progress, ctx) => cards.filter(c => c.lesson === ctx.currentLesson - 1).slice(-2),
+  }
+  const queue = buildQueue(DEMO_CARDS, { ...FRESH_PROGRESS, currentLesson: 4 }, NOW, lastTwo)
+  expect(queue.recall).toEqual(['en-a1-03-04', 'en-a1-03-05'])
+  expect(queue.fresh.length).toBe(5)
+})
 
 test('answers match ignoring case, punctuation and spacing', () => {
   expect(normalizeAnswer('  Good   MORNING! ')).toBe('good morning')
