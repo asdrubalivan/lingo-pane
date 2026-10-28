@@ -4,6 +4,8 @@
 
 A [Claude Code](https://claude.com/claude-code) mod that teaches you a language **live**, right in your terminal: a lesson pane, micro-lessons while Claude works, and a tutor that corrects you the way you prefer.
 
+![30 s demo: Claude works on a long task, a lesson opens beside it, the tutor points at a mistake without fixing it, and the flashcard shows in the spinner line.](docs/images/lingo-pane-demo.gif)
+
 > **Status: early, private.** It works end to end in the terminal but is still being tried out. Design and what is built: [`docs/decisions.md`](docs/decisions.md).
 
 ## What it does

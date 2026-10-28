@@ -19,6 +19,10 @@ done
 export DISABLE_AUTOUPDATER=1
 export FORCE_HYPERLINK=1
 
+# The header prints the working directory; leave it out so the take does not
+# show where it was recorded. Set after the loop above, which drops CLAUDE*.
+export CLAUDE_CODE_HIDE_CWD=1
+
 export CLAUDE_CONFIG_DIR="${DEMO_CONFIG_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/lingo-pane-demo-claude}"
 mkdir -p "$CLAUDE_CONFIG_DIR"
 
