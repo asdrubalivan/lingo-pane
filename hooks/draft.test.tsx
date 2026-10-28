@@ -172,6 +172,21 @@ test('a reading answer longer than the field is drawn whole, and goes when the a
   await pane.unmount()
 })
 
+test('a role-play reply longer than the field is drawn whole, and goes when it is sent', async ($, on) => {
+  const AFTER_CONVERSATION = { version: 1, units: 1, lastDoneAt: { conversation: '2026-10-02T09:00:00.000Z' }, done: { conversation: 1 }, recent: [] }
+  world(on, { store: { activity: AFTER_CONVERSATION } })
+  await openWithCommand($)
+  const pane = await mountPane($)
+  expect(await pane.find({ type: 'Text', text: /role-play · B1/ })).toBeDefined()
+
+  await type(pane, 'reply', LONG)
+  expect(await echoOf(pane, LONG)).toBeDefined()
+
+  await pane.input({ key: 'reply', text: LONG })
+  expect(await pane.find({ type: 'Text', text: /^typing/ })).toBeUndefined()
+  await pane.unmount()
+})
+
 test('a review answer longer than the field is drawn whole, and goes when the answer is sent', async ($, on) => {
   world(on)
   await openWithCommand($)
@@ -252,6 +267,35 @@ test('the wizard shows the whole language or interests being typed, and nothing 
   await pane.press({ key: 'next' })
   await type(pane, 'interests-0', LONG_INTERESTS)
   expect(await echoOf(pane, LONG_INTERESTS)).toBeDefined()
+  await pane.unmount()
+})
+
+test('in the wizard, Enter keeps the text in the field, so its echo stays with it', async ($, on) => {
+  const { entries } = world(on)
+  entries.delete('setup')
+  const pane = await mountPane($)
+
+  await pane.input({ key: 'native-0', text: LONG_LANGUAGE })
+  // Drawn again with its text (the key moved on): the field and its echo agree.
+  expect((await pane.find({ key: 'native-1' }))?.text).toBe(LONG_LANGUAGE)
+  expect(await echoOf(pane, LONG_LANGUAGE)).toBeDefined()
+  await pane.unmount()
+})
+
+test('redoing the setup over a lesson leaves no draft behind when the lesson comes back', async ($, on) => {
+  world(on)
+  await openWithCommand($)
+  const pane = await mountPane($)
+  await type(pane, 'reply', LONG)
+  expect(await echoOf(pane, LONG)).toBeDefined()
+
+  await $.command.run({ command: 'lingo', args: 'setup', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 139 } })
+  expect(await pane.find({ type: 'Text', text: /lingo-pane setup/ })).toBeDefined()
+  for (const key of ['next', 'next', 'next', 'skip', 'next', 'next', 'confirm']) await pane.press({ key })
+
+  // The same unfinished conversation, its field empty again.
+  expect(await pane.find({ key: 'reply' })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^typing/ })).toBeUndefined()
   await pane.unmount()
 })
 

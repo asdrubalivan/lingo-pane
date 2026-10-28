@@ -4,7 +4,7 @@ import { summaryText } from '../../src/conversation'
 import { answerQuestion } from '../orchestration'
 import { clearDraft, keepDraft, touch } from '../engine'
 import type { LessonContext } from './context'
-import { drawEcho, draftOf } from './echo'
+import { drawTypedEcho } from './echo'
 
 // A reading: the text, then one question at a time. An empty Enter shows the
 // answer and makes a card of the question.
@@ -13,6 +13,8 @@ export function drawReading(pane: LessonContext) {
   const { Box, Input, Link, Text } = ui
   const reading = current.reading
   const question = reading?.questions[reading.index]
+  // The draft belongs to this question: the field keeps its key from one question to the next.
+  const field = `reading-answer:${reading?.id}:${reading?.index}`
   return (
     <Box flexDirection="column">
       {top}
@@ -50,23 +52,17 @@ export function drawReading(pane: LessonContext) {
                   submitLabel={LABELS.reviewSubmit}
                   autoFocus
                   onInput={async value => {
+                    await keepDraft(engine, field, value)
                     await touch(engine)
-                    await keepDraft(engine, 'reading-answer', value)
                   }}
                   onSubmit={async value => {
-                    await touch(engine)
                     await clearDraft(engine)
+                    await touch(engine)
                     await answerQuestion(engine, value)
                   }}
                 />
               </Box>
-              {drawEcho(
-                pane,
-                'reading-answer',
-                draftOf(pane.draft, 'reading-answer'),
-                { submitLabel: LABELS.reviewSubmit, isBoxed: true },
-                { color: theme.you, dim },
-              )}
+              {drawTypedEcho(pane, field, { submitLabel: LABELS.reviewSubmit, isBoxed: true }, { color: theme.you, dim })}
               {reading.misses > 0 && (
                 <Text color={theme.err} dimColor={dim}>
                   {LABELS.readingNotQuite}

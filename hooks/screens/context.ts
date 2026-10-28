@@ -19,8 +19,8 @@ export type PaneContext = {
   top: JSX.Element
   // The pane's body width, to tell whether a typed line fits its field.
   columns: number
-  // What the learner has typed in the field on screen (see `drawEcho`).
-  draft: LingoDraft
+  // What the learner has typed in the field on screen (see `drawTypedEcho`).
+  typed: LingoDraft
 }
 
 // The lesson screens: a learner who is set up, the theme's colors, what is on screen.

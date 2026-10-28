@@ -6,7 +6,7 @@ import { isFinished } from '../../src/lesson'
 import { clearDraft, currentPaneData, keepDraft, touch } from '../engine'
 import { advanceCard, askTutorHint, beginReview, cardLookup, leaveReview, reviewQueueOf, submitAnswer } from '../review-session'
 import type { LessonContext } from './context'
-import { drawEcho, draftOf } from './echo'
+import { drawTypedEcho } from './echo'
 
 // The review: the built-in pack, card by card. An empty Enter shows the answer
 // (a miss); no letter hotkeys, since the field takes every printable key.
@@ -66,6 +66,8 @@ export async function drawReview(pane: LessonContext) {
   }
 
   const isRecall = session.index < session.recallCount
+  // The draft belongs to this card of this lesson, so it never follows the learner to another.
+  const field = `answer-${session.lesson}-${session.index}`
   return (
     <Box flexDirection="column" marginTop={1}>
       {packNote}
@@ -108,8 +110,8 @@ export async function drawReview(pane: LessonContext) {
               submitLabel={LABELS.reviewSubmit}
               autoFocus
               onInput={async value => {
+                await keepDraft(engine, field, value)
                 await touch(engine)
-                await keepDraft(engine, `answer-${session.index}`, value)
               }}
               onSubmit={async value => {
                 await clearDraft(engine)
@@ -117,10 +119,9 @@ export async function drawReview(pane: LessonContext) {
               }}
             />
           </Box>
-          {drawEcho(
+          {drawTypedEcho(
             pane,
-            `answer-${session.index}`,
-            draftOf(pane.draft, `answer-${session.index}`),
+            field,
             { label: LABELS.reviewIn(setup.targetLanguage), submitLabel: LABELS.reviewSubmit, isBoxed: true },
             { color: theme.you, dim },
           )}

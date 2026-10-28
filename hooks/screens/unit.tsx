@@ -6,7 +6,7 @@ import type { LingoActivityLog } from '../../types'
 import { clearDraft, keepDraft, touch } from '../engine'
 import { sendHelp, sendReply } from '../orchestration'
 import type { LessonContext } from './context'
-import { drawEcho, draftOf } from './echo'
+import { drawTypedEcho } from './echo'
 
 // A conversation or role-play unit: the lines so far, the learner's field, and
 // at the end the summary with the next activity one press away.
@@ -29,6 +29,8 @@ export function drawUnit(pane: LessonContext, log: LingoActivityLog) {
     )
   }
 
+  // The draft belongs to this unit's reply: the field keeps its key from one unit to the next.
+  const field = `reply:${unit.id}`
   const lastTutor = [...unit.lines].reverse().find(l => l.who === 'tutor')
   const found = unit.summary === null ? null : levelHint(log, setup.level)
   const hint = found === null ? null : LABELS.levelHint(found.direction, found.level)
@@ -98,18 +100,18 @@ export function drawUnit(pane: LessonContext, log: LingoActivityLog) {
               submitLabel={LABELS.replySubmit}
               autoFocus
               onInput={async value => {
+                await keepDraft(engine, field, value)
                 await touch(engine)
-                await keepDraft(engine, 'reply', value)
               }}
               onSubmit={async value => {
-                await touch(engine)
                 await clearDraft(engine)
+                await touch(engine)
                 if (value.trim() === '') return sendHelp(engine, setup)
                 return sendReply(engine, setup, value)
               }}
             />
           </Box>
-          {drawEcho(pane, 'reply', draftOf(pane.draft, 'reply'), { submitLabel: LABELS.replySubmit, isBoxed: true }, { color: theme.you, dim })}
+          {drawTypedEcho(pane, field, { submitLabel: LABELS.replySubmit, isBoxed: true }, { color: theme.you, dim })}
           <Box columnGap={2} flexWrap="wrap">
             {lastTutor !== undefined && (
               <Text color={theme.tutor} dimColor={dim}>

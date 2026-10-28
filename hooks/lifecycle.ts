@@ -11,7 +11,7 @@ import { canSeatSplit } from '../src/split'
 import { ACTIVITY, MISTAKES, SETUP, load, modify } from '../src/storage'
 import { themeByName } from '../src/themes'
 import { CLOSE_DELAY_MS, SHOW_DELAY_MS, closeOnTurnComplete, isKeptOpen, transition } from '../src/wait-machine'
-import { closeSplit, currentSetup, dispatchWait, loadSetupMirror, refreshPaneData } from './engine'
+import { clearDraft, closeSplit, currentSetup, dispatchWait, loadSetupMirror, refreshPaneData } from './engine'
 import type { Engine } from './engine'
 import { ensureLesson, finishedSummary } from './orchestration'
 import { openArgs, viewportOf } from './runtime'
@@ -72,6 +72,9 @@ export async function lingoCommand(rt: Runtime, engine: Engine, e: CommandEvent)
 
   if (parsed.kind === 'setup') {
     // Always the wizard, never a toggle: re-running it resumes where it was.
+    // The lesson's field goes away under it, with whatever was typed there.
+    // The lesson's field goes away under it, with whatever was typed there.
+    await clearDraft(engine)
     await engine.setupWizard.update(s => wizardTransition(s, { type: 'open' }, draftFromConfig(rt.config.native, rt.config.target)))
     const opened = await engine.ui.open(openArgs(rt, setup, e.presentation?.columns))
     if (opened.isPlaced) await dispatchWait(engine, { type: 'pane-placed', opener: 'person' })
