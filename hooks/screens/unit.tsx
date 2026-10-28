@@ -1,4 +1,3 @@
-import { levelHint } from '../../src/activities'
 import { isAwaitingLearner, markedParts, summaryText } from '../../src/conversation'
 import { LABELS } from '../../src/labels'
 import { listenUrl } from '../../src/listen'
@@ -10,7 +9,7 @@ import type { LessonContext } from './context'
 // A conversation or role-play unit: the lines so far, the learner's field, and
 // at the end the summary with the next activity one press away.
 export function drawUnit(
-  { engine, ui, isFocused, top, setup, theme, dim, current, chip, nextButton, switchButton }: LessonContext,
+  { engine, ui, isFocused, top, setup, strategies, theme, dim, current, chip, nextButton, switchButton }: LessonContext,
   log: LingoActivityLog,
 ) {
   const { Box, Input, Link, Text } = ui
@@ -31,7 +30,7 @@ export function drawUnit(
   }
 
   const lastTutor = [...unit.lines].reverse().find(l => l.who === 'tutor')
-  const found = unit.summary === null ? null : levelHint(log, setup.level)
+  const found = unit.summary === null ? null : strategies.activityLog.levelHint(log, setup.level)
   const hint = found === null ? null : LABELS.levelHint(found.direction, found.level)
 
   // Where a role-play happens and who plays whom, under the chip.

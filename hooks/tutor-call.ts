@@ -2,6 +2,7 @@
 import { contextForTutor } from '../src/context'
 import { failureReason } from '../src/failure'
 import { LABELS } from '../src/labels'
+import { strategiesFor } from '../src/resolver'
 import { TUTOR_MAX_TOKENS, TUTOR_TIMEOUT_MS } from '../src/tutor'
 import type { TutorContext } from '../src/tutor'
 import type { LingoSetup, LingoUnit } from '../types'
@@ -15,6 +16,7 @@ export async function sessionMaterial(engine: Engine, setup: LingoSetup): Promis
 // What the tutor knows about this learner and this unit.
 export function tutorContext(setup: LingoSetup, unit: LingoUnit | null, material: string | null = null): TutorContext {
   return {
+    correctionStyle: strategiesFor(setup).correctionStyle,
     targetLanguage: setup.targetLanguage,
     nativeLanguage: setup.nativeLanguage,
     level: setup.level,

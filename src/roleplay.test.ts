@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import { socratic } from './correction/socratic'
 import { scenariosFor } from './content/roleplay-scenarios'
 import {
   MAX_SCENARIO_ROLE_LENGTH,
@@ -30,6 +31,7 @@ test('with interests every other role-play is made up; the fixed ones still rota
 
 test('a made-up role-play asks for the setting first, around the interests', () => {
   const ctx: TutorContext = {
+    correctionStyle: socratic,
     targetLanguage: 'English', nativeLanguage: 'Spanish', level: 'A2', interests: ['chess', 'jazz'],
     activity: 'roleplay', scenario: null, weave: [], workContext: null,
   }

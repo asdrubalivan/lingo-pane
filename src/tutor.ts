@@ -2,17 +2,19 @@
 // `$.model.complete` calls live in hooks/tutor-call.ts and hooks/orchestration.ts. The tutor runs on the
 // model chosen in the setup (Sonnet by default), with low effort and a cap.
 
-import { socratic } from './correction/socratic'
 import { EXCERPT_DELIMITER } from './context'
 import { MAX_TUTOR_LENGTH, validCorrection } from './conversation'
 import type { TutorTurn } from './conversation'
 import { MAX_MODEL_REPLY, sanitizeModelText } from './sanitize'
+import type { CorrectionStyle } from './strategies'
 import type { LingoLevel, LingoScenario, LingoUnit } from '../types'
 
 export const TUTOR_MAX_TOKENS = 300
 export const TUTOR_TIMEOUT_MS = 30_000
 
 export type TutorContext = {
+  /** How the tutor reacts to an answer: the correction style in force. */
+  correctionStyle: CorrectionStyle
   targetLanguage: string
   nativeLanguage: string
   level: LingoLevel
@@ -37,7 +39,7 @@ const FORMAT = (native: string) =>
 export function tutorSystem(ctx: TutorContext): string {
   const { targetLanguage: target, nativeLanguage: native, level } = ctx
   const lines = [
-    socratic.instruction({ targetLanguage: target, nativeLanguage: native }),
+    ctx.correctionStyle.instruction({ targetLanguage: target, nativeLanguage: native }),
     `Write your own lines in ${target}, at CEFR ${level}: one or two short sentences, with words a ${level} learner knows.`,
   ]
   if (ctx.activity === 'roleplay' && ctx.scenario !== null) {
