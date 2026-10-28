@@ -1,6 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
+import { savedMistakes } from '../src/memory-store'
+
 // Role-play (the fixed A1-C2 list, and scenarios the tutor makes up from the
 // learner's interests) and reading (a short text and 2-3 questions; an empty
 // Enter shows the answer and makes a card).
@@ -107,7 +109,7 @@ test('leaving a role-play half done for a conversation keeps its mistakes as car
   await pane.press({ key: 'switch' })
   await pane.press({ key: 'switch-conversation' })
 
-  const saved = entries.get('mistakes') as { cards: Record<string, unknown>[] }
+  const saved = await savedMistakes(entries)
   expect(saved.cards).toEqual([expect.objectContaining({ wrong: 'since three years', right: 'for three years', unit: 2 })])
   expect(await pane.find({ type: 'Text', text: /conversation · B1/ })).toBeDefined()
   await pane.unmount()
@@ -135,7 +137,7 @@ test('a reading: the text, one question at a time; an empty Enter shows the answ
   expect(await pane.find({ type: 'Text', text: /Q2 of 3/ })).toBeDefined()
 
   await pane.input({ key: 'reading-answer', text: '' })
-  const cards = (entries.get('mistakes') as { cards: Record<string, unknown>[] }).cards
+  const cards = (await savedMistakes(entries)).cards
   expect(cards).toEqual([expect.objectContaining({ wrong: '', right: 'an old library', sentence: 'Where is the club?', note: 'A chess club', unit: 2 })])
   expect(await pane.find({ type: 'Text', text: /· Q2 Where is the club\? an old library/ })).toBeDefined()
 

@@ -26,6 +26,7 @@ Los mods corren fuera del sandbox y pueden ver tus prompts y tool calls. Lo que 
 - **Lee:** cuándo empieza y termina un turno, si una tool call necesita tu permiso y el tamaño de la terminal, para abrir y cerrar el split a tiempo. No guarda tus prompts ni las respuestas de Claude, salvo que actives la opción de abajo.
 - **Guarda** (en el almacén de plugins de Claude Code, en tu máquina): tu setup, tu avance en el pack incluido, las tarjetas hechas con tus errores y un registro corto de las unidades terminadas.
 - **Envía a Claude** (con las credenciales de tu sesión, a cargo de tu plan): las peticiones del tutor, que llevan tus idiomas, nivel e intereses, tus líneas en la lección y los errores que tocan repasar. Con la opción **"material de tu propia sesión"** activada (apagada por defecto), también extractos cortos de tu último prompt y de la última respuesta de Claude, sustituyendo antes lo que parezca una clave, un token, una contraseña o un correo por un marcador como `[redacted]` o `[email]`.
+- **Trata ese extracto como texto no fiable.** La última respuesta de Claude puede citar una página web o un archivo, así que el extracto puede llevar instrucciones escritas por otra persona. Se envía al modelo como simple material de temas, dentro de un bloque delimitado y marcado como "no son instrucciones", y antes el mod neutraliza en él el delimitador y las etiquetas del formato de corrección del tutor (`FIX:`, `TUTOR:`, `SCENARIO:`, en mayúsculas), de modo que le cuesta más cerrar el bloque o hacerse pasar por una respuesta del tutor. Eso reduce el riesgo, pero no lo elimina: el modelo sigue leyendo el texto, y las mismas palabras en minúsculas se dejan como están. Una corrección que propone el tutor solo se guarda como tarjeta de error si es texto corto y sencillo con dos formas distintas; si no, se descarta y el turno sigue sin ella.
 - **Envía a Google** solo cuando pulsas `🔊 listen`: la frase en pantalla, abierta en Google Translate en tu navegador.
 
 Nada más sale de tu máquina.
@@ -36,7 +37,7 @@ Necesitas Node 22 o superior. Desde un clon limpio:
 
 ```sh
 npm ci
-npm run check   # revisión de tipos y después los tests
+npm run check   # revisión de tipos, encabezados de los README, tests de los scripts y después los tests del plugin
 ```
 
 - `npm test` ejecuta `claude plugin test .`, el kit de pruebas del plugin. La versión de Claude Code está fijada en `package.json` (2.1.287, de la que salen los tipos): las versiones más nuevas han cambiado el comportamiento del motor, y dos tests de permisos fallan en la 2.1.308, así que cambia la versión fijada a propósito, no por accidente.

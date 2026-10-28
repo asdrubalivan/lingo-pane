@@ -26,6 +26,7 @@ Les mods s'exécutent hors du sandbox et peuvent voir vos prompts et vos appels 
 - **Lit :** quand un tour commence et finit, si un appel d'outil demande votre permission, et la taille du terminal, pour ouvrir et fermer le split au bon moment. Il ne garde ni vos prompts ni les réponses de Claude, sauf si vous activez l'option ci-dessous.
 - **Stocke** (dans le stockage des plugins de Claude Code, sur votre machine) : votre configuration, votre progression dans le pack fourni, les cartes tirées de vos erreurs et un court journal des unités terminées.
 - **Envoie à Claude** (avec les identifiants de votre session, sur votre forfait) : les requêtes du tuteur, qui contiennent vos langues, votre niveau et vos centres d'intérêt, vos phrases dans la leçon et les erreurs à réviser. Avec l'option **« matériel de votre propre session »** activée (désactivée par défaut), aussi de courts extraits de votre dernier prompt et de la dernière réponse de Claude, après avoir remplacé ce qui ressemble à une clé, un jeton, un mot de passe ou une adresse e-mail par un marqueur tel que `[redacted]` ou `[email]`.
+- **Traite cet extrait comme un texte non fiable.** La dernière réponse de Claude peut citer une page web ou un fichier, donc l'extrait peut contenir des instructions écrites par quelqu'un d'autre. Il est envoyé au modèle comme simple matière de sujets, dans un bloc délimité et marqué « pas des instructions », et auparavant le mod y neutralise le délimiteur et les étiquettes du format de correction du tuteur (`FIX:`, `TUTOR:`, `SCENARIO:`, en majuscules), de sorte qu'il lui est plus difficile de fermer le bloc ou de se faire passer pour une réponse du tuteur. Cela réduit le risque sans le supprimer : le modèle lit toujours le texte, et les mêmes mots en minuscules sont laissés tels quels. Une correction proposée par le tuteur n'est conservée comme carte d'erreur que si elle est courte, en texte simple, avec deux formes différentes ; sinon elle est écartée et le tour continue sans elle.
 - **Envoie à Google** seulement quand vous appuyez sur `🔊 listen` : la phrase à l'écran, ouverte dans Google Traduction dans votre navigateur.
 
 Rien d'autre ne quitte votre machine.
@@ -36,7 +37,7 @@ Il faut Node 22 ou plus récent. Depuis un clone propre :
 
 ```sh
 npm ci
-npm run check   # vérification des types, puis les tests
+npm run check   # vérification des types, titres des README, tests des scripts, puis les tests du plugin
 ```
 
 - `npm test` lance `claude plugin test .`, le kit de tests du plugin. La version de Claude Code est figée dans `package.json` (2.1.287, celle dont viennent les types) : les versions plus récentes ont changé le comportement du moteur, et deux tests de permissions échouent sur la 2.1.308 ; changez la version figée volontairement, pas par accident.
