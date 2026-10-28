@@ -21,9 +21,11 @@ import type { LingoSetup, LingoSetupWizard } from '../../types'
 import { nowIso, touch } from '../engine'
 import { ensureLesson } from '../orchestration'
 import type { PaneContext } from './context'
+import { drawEcho } from './echo'
 
 // Setup pending, or being redone: the guided wizard, one step at a time.
-export function drawWizard({ engine, rt, ui }: PaneContext, setup: LingoSetup | null, wizard: LingoSetupWizard) {
+export function drawWizard(pane: PaneContext, setup: LingoSetup | null, wizard: LingoSetupWizard) {
+  const { engine, rt, ui } = pane
   const { Box, Button, Input, Text } = ui
   const { native, target } = rt.config
   // What an untouched draft stands for: what is saved, else the userConfig.
@@ -73,6 +75,8 @@ export function drawWizard({ engine, rt, ui }: PaneContext, setup: LingoSetup | 
     </Box>
   )
   const preview = themeByName(draft.theme).colors
+  // The fields keep their text in the wizard's draft on every change: the echo reads it from there.
+  const echo = (field: string, text: string, label: string) => drawEcho(pane, field, text, { label, isBoxed: false })
 
   return (
     <Box flexDirection="column">
@@ -101,6 +105,7 @@ export function drawWizard({ engine, rt, ui }: PaneContext, setup: LingoSetup | 
               keepText()
             }}
           />
+          {echo('native', draft.nativeLanguage, LABELS.setupNative)}
           <Input
             key={`target-${rt.inputRev}`}
             label={LABELS.setupTarget}
@@ -112,6 +117,7 @@ export function drawWizard({ engine, rt, ui }: PaneContext, setup: LingoSetup | 
               keepText()
             }}
           />
+          {echo('target', draft.targetLanguage, LABELS.setupTarget)}
         </Box>
       )}
 
@@ -150,6 +156,7 @@ export function drawWizard({ engine, rt, ui }: PaneContext, setup: LingoSetup | 
               keepText()
             }}
           />
+          {echo('interests', draft.interests, LABELS.setupInterests)}
         </Box>
       )}
 

@@ -2,15 +2,19 @@ import { LABELS } from '../../src/labels'
 import { listenUrl } from '../../src/listen'
 import { summaryText } from '../../src/conversation'
 import { answerQuestion } from '../orchestration'
-import { touch } from '../engine'
+import { clearDraft, keepDraft, touch } from '../engine'
 import type { LessonContext } from './context'
+import { drawTypedEcho } from './echo'
 
 // A reading: the text, then one question at a time. An empty Enter shows the
 // answer and makes a card of the question.
-export function drawReading({ engine, ui, isFocused, top, setup, theme, dim, current, chip, nextButton, switchButton }: LessonContext) {
+export function drawReading(pane: LessonContext) {
+  const { engine, ui, isFocused, top, setup, theme, dim, current, chip, nextButton, switchButton } = pane
   const { Box, Input, Link, Text } = ui
   const reading = current.reading
   const question = reading?.questions[reading.index]
+  // The draft belongs to this question: the field keeps its key from one question to the next.
+  const field = `reading-answer:${reading?.id}:${reading?.index}`
   return (
     <Box flexDirection="column">
       {top}
@@ -47,13 +51,18 @@ export function drawReading({ engine, ui, isFocused, top, setup, theme, dim, cur
                   placeholder={LABELS.readingPlaceholder}
                   submitLabel={LABELS.reviewSubmit}
                   autoFocus
-                  onInput={() => touch(engine)}
+                  onInput={async value => {
+                    await keepDraft(engine, field, value)
+                    await touch(engine)
+                  }}
                   onSubmit={async value => {
+                    await clearDraft(engine)
                     await touch(engine)
                     await answerQuestion(engine, value)
                   }}
                 />
               </Box>
+              {drawTypedEcho(pane, field, { submitLabel: LABELS.reviewSubmit, isBoxed: true }, { color: theme.you, dim })}
               {reading.misses > 0 && (
                 <Text color={theme.err} dimColor={dim}>
                   {LABELS.readingNotQuite}

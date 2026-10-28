@@ -1,5 +1,6 @@
 import type { EngineInterface, PluginState } from 'claude-code'
 
+import { NO_DRAFT } from '../src/draft'
 import { strategiesFor } from '../src/resolver'
 import type { ActiveStrategies } from '../src/resolver'
 import { MISTAKES, SETUP, load, tryLoad } from '../src/storage'
@@ -51,6 +52,8 @@ export type Engine = {
   spinnerCard: Cell<Mod['spinnerCard']>
   // The contextual mode's material (opt-in): the last prompt and Claude's last reply.
   workContext: Cell<Mod['workContext']>
+  // What the learner has typed in the field on screen, for the echo. Screen state only, never stored.
+  draft: Cell<Mod['draft']>
 }
 
 export const nowIso = async (engine: Engine) => new Date(await engine.clock.now()).toISOString()
@@ -112,13 +115,26 @@ export async function currentPaneData(engine: Engine, strategies: ActiveStrategi
   return mirror.isLoaded ? mirror : ((await loadPaneValues(engine, strategies)) ?? NO_PANE_VALUES)
 }
 
-export function dispatchWait(engine: Engine, event: WaitEvent) {
-  return engine.wait.update(s => transition(s, event))
+export async function dispatchWait(engine: Engine, event: WaitEvent) {
+  const state = await engine.wait.update(s => transition(s, event))
+  // The split closed, or paused without a field: whatever was typed went with it.
+  if (event.type === 'pane-closed' || state.phase === 'paused') await clearDraft(engine)
+  return state
 }
 
 export async function closeSplit(engine: Engine) {
   await engine.ui.close({ id: PANE })
   await dispatchWait(engine, { type: 'pane-closed' })
+}
+
+// A field that is sent, or no longer on screen, leaves nothing to echo.
+export async function clearDraft(engine: Engine) {
+  if ((await engine.draft.read()).text !== '') await engine.draft.update(() => NO_DRAFT)
+}
+
+// What a field's typing leaves in the draft: its own text, in place of any other field's.
+export function keepDraft(engine: Engine, field: string, text: string) {
+  return engine.draft.update(() => ({ field, text }))
 }
 
 // Any key typed in the split's field or any press there: the split is in use.

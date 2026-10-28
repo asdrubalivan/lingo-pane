@@ -2,13 +2,15 @@
 import { markedParts } from '../../src/conversation'
 import { LABELS } from '../../src/labels'
 import { isFinished } from '../../src/lesson'
-import { currentPaneData, touch } from '../engine'
+import { clearDraft, currentPaneData, keepDraft, touch } from '../engine'
 import { advanceCard, askTutorHint, beginReview, cardLookup, leaveReview, reviewQueueOf, submitAnswer } from '../review-session'
 import type { LessonContext } from './context'
+import { drawTypedEcho } from './echo'
 
 // The review: the pack of the learner's language pair, card by card. An empty Enter shows the answer
 // (a miss); no letter hotkeys, since the field takes every printable key.
-export async function drawReview({ engine, ui, isFocused, setup, strategies, theme, dim }: LessonContext) {
+export async function drawReview(pane: LessonContext) {
+  const { engine, ui, isFocused, setup, strategies, theme, dim } = pane
   const { pack } = strategies
   const { Box, Button, Input, Text } = ui
   const session = await engine.practice.read()
@@ -64,6 +66,8 @@ export async function drawReview({ engine, ui, isFocused, setup, strategies, the
   }
 
   const isRecall = session.index < session.recallCount
+  // The draft belongs to this card of this lesson, so it never follows the learner to another.
+  const field = `answer-${session.lesson}-${session.index}`
   return (
     <Box flexDirection="column" marginTop={1}>
       {packNote}
@@ -105,10 +109,22 @@ export async function drawReview({ engine, ui, isFocused, setup, strategies, the
               placeholder={LABELS.reviewPlaceholder}
               submitLabel={LABELS.reviewSubmit}
               autoFocus
-              onInput={() => touch(engine)}
-              onSubmit={value => submitAnswer(engine, lookup, value)}
+              onInput={async value => {
+                await keepDraft(engine, field, value)
+                await touch(engine)
+              }}
+              onSubmit={async value => {
+                await clearDraft(engine)
+                await submitAnswer(engine, lookup, value)
+              }}
             />
           </Box>
+          {drawTypedEcho(
+            pane,
+            field,
+            { label: LABELS.reviewIn(setup.targetLanguage), submitLabel: LABELS.reviewSubmit, isBoxed: true },
+            { color: theme.you, dim },
+          )}
           {session.hint !== null && (
             <Text color={theme.err} dimColor={dim}>
               {LABELS.reviewNotYet(session.hint)}

@@ -2,7 +2,7 @@ import type { Elements } from 'claude-code'
 
 import type { ActiveStrategies } from '../../src/resolver'
 import type { ThemeColors } from '../../src/themes'
-import type { LingoLesson, LingoSetup } from '../../types'
+import type { LingoDraft, LingoLesson, LingoSetup } from '../../types'
 import type { Runtime } from '../runtime'
 import type { Engine } from '../engine'
 
@@ -18,6 +18,10 @@ export type PaneContext = {
   isFocused: boolean
   // What sits on top of every screen: whether the keys are here and what Claude is doing.
   top: JSX.Element
+  // The pane's body width, to tell whether a typed line fits its field.
+  columns: number
+  // What the learner has typed in the field on screen (see `drawTypedEcho`).
+  typed: LingoDraft
 }
 
 // The lesson screens: a learner who is set up, the theme's colors, what is on screen.

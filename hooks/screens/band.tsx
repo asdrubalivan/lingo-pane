@@ -3,7 +3,7 @@ import type { MatchedHook } from 'claude-code'
 import { LABELS } from '../../src/labels'
 import { draftFromConfig, wizardTransition } from '../../src/setup'
 import { isOfferVisible } from '../../src/wait-machine'
-import { currentSetup, dispatchWait, refreshPaneData } from '../engine'
+import { clearDraft, currentSetup, dispatchWait, refreshPaneData } from '../engine'
 import type { Engine } from '../engine'
 import { ensureLesson } from '../orchestration'
 import { noteViewport, openArgs } from '../runtime'
@@ -38,6 +38,7 @@ export async function drawBand(rt: Runtime, engine: Engine, e: Parameters<BandRe
             hotkey="2"
             plain
             onPress={async () => {
+              await clearDraft(engine)
               await engine.setupWizard.update(s => wizardTransition(s, { type: 'open' }, draftFromConfig(rt.config.native, rt.config.target)))
               // Opened by a press, so it is placed at any width.
               const opened = await engine.ui.open(openArgs(rt, setup))

@@ -3,6 +3,7 @@ import type { EngineInterface, ResolveInput, Register } from 'claude-code'
 
 import { NO_CONTEXT } from '../src/context'
 import { IDLE_LESSON } from '../src/conversation'
+import { NO_DRAFT } from '../src/draft'
 import { IDLE_PRACTICE } from '../src/lesson'
 import { CLOSED_WIZARD } from '../src/setup'
 import { INITIAL_WAIT } from '../src/wait-machine'
@@ -42,6 +43,7 @@ const practice = atom({ plugin: 'lingo-pane', key: 'practice' } as const, IDLE_P
 const lesson = atom({ plugin: 'lingo-pane', key: 'lesson' } as const, IDLE_LESSON)
 const spinnerCard = atom({ plugin: 'lingo-pane', key: 'spinnerCard' } as const, { turnId: null, text: null })
 const workContext = atom({ plugin: 'lingo-pane', key: 'workContext' } as const, NO_CONTEXT)
+const draft = atom({ plugin: 'lingo-pane', key: 'draft' } as const, NO_DRAFT)
 
 // `$` is never handed to a function of another file, and `$.noun.event(...)` is spelled where
 // it is called: this is the engine as the rest of the mod gets it.
@@ -76,6 +78,7 @@ const engineOf = ($: EngineInterface): Engine => ({
   lesson: { read: () => read($, lesson), update: change => update($, lesson, change) },
   spinnerCard: { read: () => read($, spinnerCard), update: change => update($, spinnerCard, change) },
   workContext: { read: () => read($, workContext), update: change => update($, workContext, change) },
+  draft: { read: () => read($, draft), update: change => update($, draft, change) },
 })
 
 // What runs on each event is in `lifecycle.ts`, the async steps of a lesson in

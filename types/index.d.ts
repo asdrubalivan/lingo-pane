@@ -301,6 +301,13 @@ export type LingoWorkContext = { prompt: string | null; answer: string | null }
 /** The micro-card the Spinner carries for one turn, worked out when the turn's delay ends. */
 export type LingoSpinnerCard = { turnId: string | null; text: string | null }
 
+/**
+ * What the learner has typed so far in the pane's field called `field`, for the echo under the field
+ * that shows the whole line when it is longer than the field. Screen state only: never written to the
+ * store and never logged. Empty `text` when nothing is being typed.
+ */
+export type LingoDraft = { field: string; text: string }
+
 declare module 'claude-code' {
   interface PluginState {
     'lingo-pane': {
@@ -313,6 +320,7 @@ declare module 'claude-code' {
       lesson: LingoLesson
       spinnerCard: LingoSpinnerCard
       workContext: LingoWorkContext
+      draft: LingoDraft
     }
   }
 }

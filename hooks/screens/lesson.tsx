@@ -4,7 +4,7 @@ import { LABELS } from '../../src/labels'
 import { strategiesFor } from '../../src/resolver'
 import { themeByName } from '../../src/themes'
 import type { LingoActivity, LingoLesson, LingoSetup } from '../../types'
-import { currentPaneData, focusKey, touch } from '../engine'
+import { clearDraft, currentPaneData, focusKey, touch } from '../engine'
 import { startActivity } from '../orchestration'
 import { isReviewRunning } from '../review-session'
 import { AVAILABLE_ACTIVITIES } from '../state'
@@ -42,6 +42,8 @@ export async function drawLesson(pane: PaneContext, setup: LingoSetup) {
 
   const openMenu = async () => {
     await touch(engine)
+    // The field goes with the menu and comes back empty.
+    await clearDraft(engine)
     await engine.lesson.update(l => ({ ...l, isMenuOpen: true }))
     await focusKey(engine, `switch-${current.activity}`)
   }

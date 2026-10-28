@@ -59,6 +59,7 @@ Review with the built-in pack (`switch ▸`, then `4`; `Start lesson`).
 10. A light terminal theme, if at hand: repeat 2 and 7 there and note what is hard to read.
 11. Press `🔊 listen` (a click: a Link is not a Tab stop) and check that Google Translate opens with the phrase.
 12. The dock: it takes the asked width (40 % by default) and a width you drag wins.
+13. A long line in a field (#21): with the split at 40 % of a wide terminal, type a sentence of about 70 characters in the conversation's reply field. Expected: the cursor stays inside the field's border (it does not run over the `listen / switch` row), and under the field a `typing …` row shows the whole sentence, wrapped, growing as you type. Delete back to a short line: the row goes. Send it: the row goes and the sentence is in the conversation. Repeat in a reading answer, a review answer and the setup wizard's fields (languages, interests). A short line must not be repeated, and an empty field shows no extra row. `/clear` or close the split while typing: no `typing …` row comes back when the field does.
 
 ## Log
 
